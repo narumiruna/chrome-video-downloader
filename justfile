@@ -18,6 +18,10 @@ build:
 zip:
     npm run zip
 
+# Merge a local playlist or ordered local segments.
+merge *args:
+    npm run merge:segments -- {{args}}
+
 # Run unit and component tests once.
 test:
     npm test

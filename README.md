@@ -2,7 +2,7 @@
 
 Chrome Video Downloader finds direct HTTP(S) video files on the current page and sends selected files to Chrome's download manager.
 
-It does not merge HLS or DASH streams, inspect cross-origin frames, bypass access controls, or handle DRM-protected media.
+The browser extension does not merge HLS or DASH streams, inspect cross-origin frames, bypass access controls, or handle DRM-protected media.
 
 Use it only for videos you own or have permission to save.
 
@@ -12,12 +12,27 @@ Use it only for videos you own or have permission to save.
 - npm 12 or a compatible npm release.
 - Chrome 96 or newer for the required extension APIs.
 - A current Chromium browser for automated E2E tests.
+- FFmpeg and FFprobe for the optional local segment merger and its integration check.
 
 ## Install
 
 ```sh
 npm ci
 ```
+
+## Merge authorized local segments
+
+A separate local CLI can remux finite, unencrypted media that is already on your computer.
+
+It requires `ffmpeg` and `ffprobe` on `PATH` and never downloads media or accepts network URLs.
+
+```sh
+npm run merge:segments -- \
+  --playlist ./recording/index.m3u8 \
+  --output ./recording.mp4
+```
+
+See the [local segment merger guide](docs/local-segment-merger.md) for ordered segment mode, overwrite behavior, validation, and limitations.
 
 ## Develop
 
@@ -75,6 +90,7 @@ To inspect the production build manually:
 - `src/core/` validates, classifies, redacts, deduplicates, and sorts untrusted page data.
 - `src/platform/` contains the minimal Chrome API adapters.
 - `src/popup/` contains the React and Radix UI popup.
+- `src/local/` contains the network-disabled local segment merger and CLI behavior.
 - `tests/` contains deterministic unit and component tests.
 - `e2e/` contains controlled browser fixtures and Playwright tests.
 
@@ -82,6 +98,7 @@ The production extension has no background worker, persistent content script, ho
 
 ## Product and release documents
 
+- [Local segment merger](docs/local-segment-merger.md)
 - [Support matrix](docs/support-matrix.md)
 - [Privacy policy](docs/privacy.md)
 - [Chrome Web Store policy baseline](docs/policy-baseline.md)

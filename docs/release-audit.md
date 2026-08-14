@@ -5,8 +5,9 @@ Audit date: August 15, 2026.
 ## Automated evidence
 
 - `npm run check` passes Biome across source, tests, fixtures, scripts, and documentation-supported formats.
-- `npm test` passes 54 unit and component tests.
+- `npm test` passes 88 unit and component tests, including local segment merger validation and lifecycle coverage.
 - `npm run typecheck` passes TypeScript strict checking.
+- `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for a one-second local HLS fixture and two seconds of explicitly ordered local MPEG-TS input.
 - `npm run build:chrome` produces `dist/chrome` and `video-downloader-0.1.0.zip` with Extension.js 4.0.32.
 - `npm run test:e2e:built` passes seven Chromium extension tests against locally generated fixtures.
 - Direct MP4, WebM, dynamic, extensionless, and authenticated fixture downloads match expected SHA-256 hashes.

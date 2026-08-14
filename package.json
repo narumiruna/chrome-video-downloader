@@ -14,12 +14,14 @@
     "typecheck": "tsc --noEmit",
     "check": "biome ci .",
     "fix": "biome check --write .",
+    "merge:segments": "tsx scripts/merge-segments.ts",
     "test": "vitest run",
     "test:e2e": "npm run build:chrome && npm run test:e2e:built",
+    "test:merge:integration": "node scripts/verify-local-segment-merger.mjs",
     "test:e2e:built": "playwright test",
     "audit:dependencies": "npm audit --omit=dev --audit-level=high",
     "audit:artifact": "node scripts/audit-artifact.mjs",
-    "ci": "npm run check && npm test && npm run typecheck && npm run audit:dependencies && npm run build:chrome && npm run test:e2e:built && npm run audit:artifact",
+    "ci": "npm run check && npm test && npm run typecheck && npm run test:merge:integration && npm run audit:dependencies && npm run build:chrome && npm run test:e2e:built && npm run audit:artifact",
     "prepare": "husky"
   },
   "dependencies": {
@@ -42,6 +44,7 @@
     "extension": "^4.0.32",
     "husky": "^9.1.7",
     "jsdom": "^27.2.0",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },

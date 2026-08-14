@@ -39,9 +39,11 @@ Keep HLS identification as an unsupported explanatory state.
 
 Do not add host permissions, offscreen documents, workers, ffmpeg.wasm, remote processing, segment downloading, or muxing.
 
-No separate HLS implementation plan is required because the decision is no-go.
+No separate browser-extension HLS implementation plan is required because the decision is no-go.
 
-Cancellation, retry, browser-memory, and separate-audio gates therefore remain intentionally unmet rather than being hidden behind an incomplete implementation.
+The repository's optional local segment merger processes only user-provided, finite, unencrypted files already on disk and does not change this browser-extension decision or its permissions.
+
+Cancellation, retry, browser-memory, and separate-audio gates therefore remain intentionally unmet rather than being hidden behind an incomplete browser implementation.
 
 ## Consequences
 
