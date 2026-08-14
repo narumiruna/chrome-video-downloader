@@ -9,6 +9,7 @@
     "start": "extension start --browser chrome",
     "build": "npm run build:chrome",
     "build:chrome": "extension build --browser chrome --zip",
+    "zip": "npm run build:chrome && npm run audit:artifact",
     "preview": "extension preview --browser chrome",
     "typecheck": "tsc --noEmit",
     "check": "biome ci .",
