@@ -16,7 +16,7 @@ The tool must not discover, download, decrypt, or bypass controls on websites or
 - [x] Verify real remuxing against the repository-owned HLS and MPEG-TS fixtures and compare duration and stream metadata with FFprobe.
 - [x] Document supported inputs, examples, safety boundaries, failure recovery, and limitations.
 - [x] Run focused tests, `npm run ci`, diff review, and security/path handling review.
-- [ ] Commit signed changes, push the existing feature branch, and update pull request #1.
+- [x] Commit signed changes, push the existing feature branch, and update pull request #1.
 
 ## Execution Evidence
 
