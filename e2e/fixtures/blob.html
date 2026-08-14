@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Blob stream fixture</title></head>
+  <body>
+    <h1>Blob stream fixture</h1>
+    <video id="video" controls></video>
+    <script>
+      const video = document.querySelector("#video");
+      video.src = URL.createObjectURL(new Blob(["owned fixture"], { type: "video/mp4" }));
+    </script>
+  </body>
+</html>

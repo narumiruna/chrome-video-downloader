@@ -1,18 +1,50 @@
 {
-  "name": "typescript-template",
+  "name": "chrome-video-downloader",
+  "version": "0.1.0",
+  "description": "Find and download direct video files from the current Chrome tab.",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "dev": "extension dev --browser chrome",
+    "start": "extension start --browser chrome",
+    "build": "npm run build:chrome",
+    "build:chrome": "extension build --browser chrome --zip",
+    "preview": "extension preview --browser chrome",
+    "typecheck": "tsc --noEmit",
     "check": "biome ci .",
+    "fix": "biome check --write .",
     "test": "vitest run",
-    "ci": "npm run check && npm test && npm run build",
+    "test:e2e": "npm run build:chrome && npm run test:e2e:built",
+    "test:e2e:built": "playwright test",
+    "audit:dependencies": "npm audit --omit=dev --audit-level=high",
+    "audit:artifact": "node scripts/audit-artifact.mjs",
+    "ci": "npm run check && npm test && npm run typecheck && npm run audit:dependencies && npm run build:chrome && npm run test:e2e:built && npm run audit:artifact",
     "prepare": "husky"
   },
+  "dependencies": {
+    "@radix-ui/react-scroll-area": "^1.2.18",
+    "@radix-ui/react-separator": "^1.1.8",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.7",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/chrome": "^0.1.32",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "extension": "^4.0.32",
     "husky": "^9.1.7",
+    "jsdom": "^27.2.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

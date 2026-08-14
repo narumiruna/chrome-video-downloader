@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "影片下載器"
+  },
+  "extensionDescription": {
+    "message": "尋找並下載目前頁面中的直接影片檔案。"
+  },
+  "actionTitle": {
+    "message": "尋找直接影片"
+  }
+}

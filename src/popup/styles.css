@@ -1,0 +1,292 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-width: min(22.5rem, 100vw);
+  width: min(22.5rem, 100vw);
+}
+
+body {
+  background: #f7f8fb;
+  color: #182230;
+}
+
+button {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 0.625rem;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid #8bbcff;
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.popup-shell {
+  display: flex;
+  min-height: 15rem;
+  max-height: min(37.5rem, 100vh);
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.page-heading > div {
+  min-width: 0;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  overflow-wrap: anywhere;
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+h2 {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.eyebrow {
+  margin-bottom: 0.2rem;
+  color: #526176;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.candidate-scroll {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.candidate-viewport {
+  max-height: 25rem;
+  padding: 0.15rem 0.3rem 0.15rem 0.15rem;
+}
+
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border: 1px solid #d8dee8;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.85rem;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 6%);
+}
+
+.candidate-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.unsupported-badge {
+  flex: none;
+  border-radius: 999px;
+  background: #f0f2f5;
+  color: #526176;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: #344054;
+  font-size: 0.78rem;
+}
+
+.metadata span:not(:last-child)::after {
+  margin-left: 0.35rem;
+  color: #98a2b3;
+  content: "•";
+}
+
+.hostname,
+.unsupported-reason {
+  overflow-wrap: anywhere;
+  color: #667085;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.primary-button {
+  width: 100%;
+  background: #1769d2;
+  color: #fff;
+  padding: 0.55rem 0.8rem;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #0f56b3;
+}
+
+.secondary-button {
+  flex: none;
+  border: 1px solid #c8d0dc;
+  background: #fff;
+  color: #243247;
+  padding: 0.5rem 0.7rem;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #edf2f8;
+}
+
+.state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.8rem;
+  line-height: 1.5;
+}
+
+.state-panel > p {
+  color: #526176;
+  font-size: 0.85rem;
+}
+
+.spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 3px solid #d4e4fa;
+  border-top-color: #1769d2;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.live-status {
+  min-height: 1.2em;
+  color: #344054;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.separator {
+  height: 1px;
+  background: #d8dee8;
+}
+
+footer {
+  display: grid;
+  gap: 0.3rem;
+  color: #667085;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.scrollbar {
+  display: flex;
+  width: 0.45rem;
+  padding: 1px;
+  user-select: none;
+  touch-action: none;
+}
+
+.scroll-thumb {
+  position: relative;
+  flex: 1;
+  border-radius: 999px;
+  background: #aeb9c8;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #111720;
+    color: #edf2f8;
+  }
+
+  .candidate-card,
+  .secondary-button {
+    border-color: #354156;
+    background: #1a2330;
+    color: #edf2f8;
+  }
+
+  .eyebrow,
+  .hostname,
+  .unsupported-reason,
+  footer,
+  .state-panel > p {
+    color: #aab7c9;
+  }
+
+  .metadata,
+  .live-status {
+    color: #cad3df;
+  }
+
+  .unsupported-badge {
+    background: #2b3748;
+    color: #cad3df;
+  }
+
+  .secondary-button:hover:not(:disabled) {
+    background: #243247;
+  }
+
+  .separator {
+    background: #354156;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-color: #1769d2;
+  }
+}

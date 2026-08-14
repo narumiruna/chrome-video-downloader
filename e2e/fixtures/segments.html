@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Segment-heavy fixture</title></head>
+  <body>
+    <h1>Segment-heavy fixture</h1>
+    <script>
+      for (let index = 0; index < 80; index += 1) {
+        void fetch(`/manifests/hls/segment-00.ts?part=${index}`);
+      }
+    </script>
+  </body>
+</html>
