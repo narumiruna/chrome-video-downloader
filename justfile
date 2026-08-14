@@ -14,6 +14,9 @@ dev:
 build:
     npm run build:chrome
 
+# Create the release zip through the production build.
+zip: build
+
 # Run unit and component tests once.
 test:
     npm test
