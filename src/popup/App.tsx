@@ -16,6 +16,7 @@ import {
   capturedMp4TrackKind,
   isCapturedMp4PlaylistMetadata,
 } from "../core/captured-mp4-metadata";
+import { parsePlaybackProgress } from "../core/playback-progress";
 import type { VideoCandidate } from "../core/video-candidate";
 import {
   type DownloadResult,
@@ -33,6 +34,23 @@ import type { CapturedVideo } from "./state";
 import { initialState, popupReducer } from "./state";
 import "./styles.css";
 
+export interface PopupRuntime {
+  onMessage: {
+    addListener(
+      listener: (
+        message: unknown,
+        sender: chrome.runtime.MessageSender,
+      ) => void,
+    ): void;
+    removeListener(
+      listener: (
+        message: unknown,
+        sender: chrome.runtime.MessageSender,
+      ) => void,
+    ): void;
+  };
+}
+
 export interface AppProps {
   locale?: SupportedLocale;
   scanPage?: () => Promise<ScanPageResult>;
@@ -40,9 +58,26 @@ export interface AppProps {
   getCapturedVideos?: () => Promise<CapturedVideo[]>;
   assembleVideo?: typeof assembleCapturedMp4;
   downloadAssembledVideo?: typeof startBlobDownload;
+  runtime?: PopupRuntime | null;
 }
 
-type AssemblyState = "idle" | "fetching" | "muxing" | "accepted" | "error";
+function defaultRuntime(): PopupRuntime | null {
+  return typeof chrome === "undefined" ? null : chrome.runtime;
+}
+
+function parseCapturedVideos(value: unknown): CapturedVideo[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is CapturedVideo =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as CapturedVideo).url === "string" &&
+      typeof (item as CapturedVideo).mimeType === "string" &&
+      typeof (item as CapturedVideo).timestamp === "number" &&
+      ((item as CapturedVideo).range === undefined ||
+        typeof (item as CapturedVideo).range === "string"),
+  );
+}
 
 function formatDuration(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -66,6 +101,44 @@ function assembledFilename(pageTitle: string): string {
   return `${basename || "video"}.mp4`;
 }
 
+function progressNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function ProgressBar({
+  completed,
+  label,
+  total,
+}: {
+  completed: number;
+  label: string;
+  total: number;
+}) {
+  const percentage =
+    total > 0 ? Math.min(100, Math.max(0, (completed / total) * 100)) : 0;
+  return (
+    <div className="progress-block">
+      <div
+        aria-label={label}
+        aria-valuemax={total}
+        aria-valuemin={0}
+        aria-valuenow={completed}
+        className="progress-bar"
+        role="progressbar"
+      >
+        <div
+          className="progress-bar-fill"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+      <p className="progress-text">
+        {label}: {progressNumber(completed)}/{progressNumber(total)} (
+        {Math.round(percentage)}%)
+      </p>
+    </div>
+  );
+}
+
 function candidateMetadata(candidate: VideoCandidate): string[] {
   const metadata = [candidate.format];
   if (candidate.width && candidate.height)
@@ -81,6 +154,7 @@ export function App({
   getCapturedVideos,
   assembleVideo = assembleCapturedMp4,
   downloadAssembledVideo = startBlobDownload,
+  runtime = defaultRuntime(),
 }: AppProps) {
   const locale = useMemo(
     () => resolveLocale(requestedLocale),
@@ -89,16 +163,16 @@ export function App({
   const copy = useMemo(() => getMessages(locale), [locale]);
   const [state, dispatch] = useReducer(popupReducer, initialState);
   const [announcement, setAnnouncement] = useState(copy.scanning);
-  const [assemblyState, setAssemblyState] = useState<AssemblyState>("idle");
   const mountedRef = useRef(false);
   const scanVersionRef = useRef(0);
+  const activeTabIdRef = useRef<number | null>(null);
   const pendingDownloadsRef = useRef(new Set<string>());
 
   const runScan = useCallback(async () => {
     const version = scanVersionRef.current + 1;
     scanVersionRef.current = version;
     dispatch({ type: "scan-started" });
-    setAssemblyState("idle");
+    activeTabIdRef.current = null;
     setAnnouncement(copy.scanning);
     try {
       const result = await scanPage();
@@ -115,6 +189,7 @@ export function App({
           }
         }
 
+        activeTabIdRef.current = result.tabId;
         dispatch({
           type: "scan-succeeded",
           candidates: result.candidates,
@@ -122,6 +197,8 @@ export function App({
           iframeUrls: result.iframeUrls,
           pageTitle: result.pageTitle,
           pageUrl: result.pageUrl,
+          playbackProgress: result.playbackProgress,
+          tabId: result.tabId,
         });
       } else if (result.status === "restricted") {
         dispatch({ type: "scan-restricted", pageTitle: result.pageTitle });
@@ -142,9 +219,44 @@ export function App({
     return () => {
       mountedRef.current = false;
       scanVersionRef.current += 1;
+      activeTabIdRef.current = null;
       pendingDownloadsRef.current.clear();
     };
   }, [locale, runScan]);
+
+  useEffect(() => {
+    if (!runtime) return;
+    const onMessage = (message: unknown): void => {
+      if (!message || typeof message !== "object") return;
+      const value = message as Record<string, unknown>;
+      const tabId = value.tabId;
+      if (
+        typeof tabId !== "number" ||
+        tabId !== activeTabIdRef.current ||
+        !Number.isInteger(tabId)
+      ) {
+        return;
+      }
+      const playback = parsePlaybackProgress(value.playback);
+      if (!playback) return;
+
+      if (value.type === "playbackProgress") {
+        dispatch({ type: "playback-progress-update", playback });
+        return;
+      }
+      if (value.type === "triggerAssembly") {
+        dispatch({
+          type: "assembly-ready",
+          capturedVideos: parseCapturedVideos(value.videos),
+          playback,
+          tabId,
+        });
+        setAnnouncement(copy.playbackComplete);
+      }
+    };
+    runtime.onMessage.addListener(onMessage);
+    return () => runtime.onMessage.removeListener(onMessage);
+  }, [copy.playbackComplete, runtime]);
 
   const handleDownload = useCallback(
     async (candidate: VideoCandidate) => {
@@ -180,17 +292,34 @@ export function App({
 
   const handleAssembly = useCallback(
     async (capturedVideos: CapturedVideo[], pageTitle: string) => {
-      if (assemblyState === "fetching" || assemblyState === "muxing") return;
+      if (
+        state.assembly.status === "fetching" ||
+        state.assembly.status === "muxing"
+      ) {
+        return;
+      }
 
-      setAssemblyState("fetching");
+      dispatch({
+        type: "assembly-progress",
+        assembly: {
+          status: "fetching",
+          completed: 0,
+          total: capturedVideos.length,
+        },
+      });
       setAnnouncement(copy.fetchingParts);
       try {
         const blob = await assembleVideo(capturedVideos, {
           onProgress: (progress: AssemblyProgress) => {
             if (!mountedRef.current) return;
-            const nextState =
-              progress.phase === "muxing" ? "muxing" : "fetching";
-            setAssemblyState(nextState);
+            dispatch({
+              type: "assembly-progress",
+              assembly: {
+                status: progress.phase,
+                completed: progress.completed,
+                total: progress.total,
+              },
+            });
             setAnnouncement(
               progress.phase === "muxing" ? copy.muxing : copy.fetchingParts,
             );
@@ -202,21 +331,30 @@ export function App({
         );
         if (!mountedRef.current) return;
         if (result.status === "accepted") {
-          setAssemblyState("accepted");
+          dispatch({
+            type: "assembly-progress",
+            assembly: { status: "accepted" },
+          });
           setAnnouncement(copy.sentStatus);
         } else {
-          setAssemblyState("error");
+          dispatch({
+            type: "assembly-progress",
+            assembly: { status: "error" },
+          });
           setAnnouncement(copy.assemblyError);
         }
       } catch {
         if (!mountedRef.current) return;
-        setAssemblyState("error");
+        dispatch({
+          type: "assembly-progress",
+          assembly: { status: "error" },
+        });
         setAnnouncement(copy.assemblyError);
       }
     },
     [
       assembleVideo,
-      assemblyState,
+      state.assembly.status,
       copy.assemblyError,
       copy.fetchingParts,
       copy.muxing,
@@ -229,7 +367,7 @@ export function App({
     "starting",
   );
   const assemblyInProgress =
-    assemblyState === "fetching" || assemblyState === "muxing";
+    state.assembly.status === "fetching" || state.assembly.status === "muxing";
 
   function scanButton() {
     return (
@@ -378,34 +516,75 @@ export function App({
       mp4Parts.some((part) => /\.m4s(?:$|[?#])/i.test(part.url));
     if (videoCount === 0 || !hasFragmentEvidence) return null;
 
+    const playback = state.playbackProgress;
+    const playbackPercentage =
+      playback && playback.duration > 0
+        ? Math.min(
+            100,
+            Math.max(0, (playback.currentTime / playback.duration) * 100),
+          )
+        : 0;
     const buttonText =
-      assemblyState === "fetching"
+      state.assembly.status === "fetching"
         ? copy.fetchingParts
-        : assemblyState === "muxing"
+        : state.assembly.status === "muxing"
           ? copy.muxing
-          : assemblyState === "accepted"
+          : state.assembly.status === "accepted"
             ? copy.sentButton
-            : assemblyState === "error"
+            : state.assembly.status === "error"
               ? copy.retry
-              : copy.assemble;
+              : playback?.assemblyReady
+                ? copy.autoAssemble
+                : copy.assemble;
 
     return (
       <div className="captured-video-section">
         <h3>{copy.capturedStreamTitle}</h3>
         <p className="captured-video-hint">{copy.capturedStreamHint}</p>
+        {playback && playback.duration > 0 ? (
+          <div className="playback-progress">
+            <ProgressBar
+              completed={playback.currentTime}
+              label={copy.playbackProgress}
+              total={playback.duration}
+            />
+            <p className="playback-time">
+              {formatDuration(playback.currentTime)} /{" "}
+              {formatDuration(playback.duration)} (
+              {Math.round(playbackPercentage)}%)
+            </p>
+            {playback.assemblyReady ? (
+              <p className="status-badge success">{copy.playbackComplete}</p>
+            ) : null}
+          </div>
+        ) : null}
         <p className="metadata captured-part-counts">
           <span>video/mp4 × {videoCount}</span>
           {audioCount > 0 ? <span>audio/mp4 × {audioCount}</span> : null}
         </p>
+        {state.assembly.status === "fetching" ? (
+          <ProgressBar
+            completed={state.assembly.completed}
+            label={copy.fetchingPartsProgress}
+            total={state.assembly.total}
+          />
+        ) : null}
+        {state.assembly.status === "muxing" ? (
+          <ProgressBar
+            completed={state.assembly.completed}
+            label={copy.muxingProgress}
+            total={state.assembly.total}
+          />
+        ) : null}
         <button
           type="button"
           className="primary-button"
-          disabled={assemblyInProgress || assemblyState === "accepted"}
+          disabled={assemblyInProgress || state.assembly.status === "accepted"}
           onClick={() => void handleAssembly(assemblyInputs, pageTitle)}
         >
           {buttonText}
         </button>
-        {assemblyState === "error" ? (
+        {state.assembly.status === "error" ? (
           <p className="unsupported-reason">{copy.assemblyError}</p>
         ) : null}
       </div>

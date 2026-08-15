@@ -13,7 +13,6 @@ const expectedPermissions = [
 ];
 const expectedHostPermissions = ["<all_urls>"];
 const forbiddenManifestKeys = [
-  "content_scripts",
   "optional_host_permissions",
   "optional_permissions",
 ];
@@ -43,6 +42,7 @@ const requiredFiles = [
   "action/index.html",
   "action/index.js",
   "background/service_worker.js",
+  "content_scripts/content-0.js",
   "images/icon-128.png",
   "manifest.json",
 ];
@@ -85,6 +85,18 @@ if (manifest.action?.default_popup !== "action/index.html") {
 }
 if (manifest.background?.service_worker !== "background/service_worker.js") {
   failures.push("background service worker path is missing or unexpected");
+}
+const [contentScript] = manifest.content_scripts ?? [];
+if (
+  manifest.content_scripts?.length !== 1 ||
+  contentScript?.all_frames !== false ||
+  JSON.stringify(contentScript?.css) !== "[]" ||
+  JSON.stringify(contentScript?.js) !==
+    JSON.stringify(["content_scripts/content-0.js"]) ||
+  JSON.stringify(contentScript?.matches) !== JSON.stringify(["<all_urls>"]) ||
+  contentScript?.run_at !== "document_start"
+) {
+  failures.push("content script declaration is missing or unexpected");
 }
 
 const files = await walk(artifactRoot);

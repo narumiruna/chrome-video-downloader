@@ -6,7 +6,9 @@ Chrome Video Downloader processes page titles, page URLs, video source URLs, med
 
 The background service worker observes media-like requests so the extension can discover video and audio fragments loaded by cross-origin players.
 
-Captured request metadata is grouped by tab, kept only in memory, capped, and removed after five minutes of inactivity or when the tab closes.
+A read-only top-frame content script observes HTML video timing and completion events so the popup can display playback capture progress and refresh the final captured fragment list.
+
+Captured request and playback metadata is grouped by tab, kept only in session memory, capped, and removed after five minutes of inactivity, navigation, or when the tab closes.
 
 When the user selects **Assemble MP4**, the extension requests captured media and supported playlist-metadata URLs from their original hosts, matches embedded initialization data to exact captured segment URLs, and remuxes compatible unencrypted MP4 audio and video fragments in the popup.
 
@@ -24,7 +26,7 @@ The extension does not use analytics, advertising, tracking, telemetry, accounts
 
 `webRequest` observes media request URLs, response media types, and HTTP byte ranges needed to identify fragmented playback.
 
-`host_permissions` allows observation and user-requested fetching of cross-origin media from embedded players and CDNs.
+`host_permissions` allows the read-only top-frame playback monitor, media-response observation, and user-requested fetching of cross-origin media from embedded players and CDNs.
 
 `alarms` removes stale in-memory request metadata.
 
@@ -44,7 +46,7 @@ No user data is sold, transferred, or shared by the developer.
 
 No user data is retained by the developer because no user data is received.
 
-Captured request metadata remains in extension memory only and is automatically discarded.
+Captured request metadata and the latest bounded playback state remain in extension session memory only and are automatically discarded.
 
 The use of information received from Chrome APIs adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements.
 

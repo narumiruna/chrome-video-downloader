@@ -27,6 +27,11 @@ export interface Messages {
   fetchingParts: string;
   muxing: string;
   assemblyError: string;
+  autoAssemble: string;
+  fetchingPartsProgress: string;
+  muxingProgress: string;
+  playbackComplete: string;
+  playbackProgress: string;
 }
 
 const messages: Record<SupportedLocale, Messages> = {
@@ -60,6 +65,11 @@ const messages: Record<SupportedLocale, Messages> = {
     muxing: "Combining audio and video…",
     assemblyError:
       "The captured stream could not be assembled. Replay it from the beginning and try again.",
+    autoAssemble: "Assemble complete video",
+    fetchingPartsProgress: "Downloading stream parts",
+    muxingProgress: "Combining audio and video",
+    playbackComplete: "Playback complete. The captured stream is ready.",
+    playbackProgress: "Playback capture progress",
   },
   "zh-TW": {
     appName: "影片下載器",
@@ -88,6 +98,11 @@ const messages: Record<SupportedLocale, Messages> = {
     fetchingParts: "正在下載串流片段…",
     muxing: "正在合併音訊與視訊…",
     assemblyError: "無法組合已擷取的串流，請從頭播放後再試一次。",
+    autoAssemble: "合併完整影片",
+    fetchingPartsProgress: "正在下載串流片段",
+    muxingProgress: "正在合併音訊與視訊",
+    playbackComplete: "影片播放完成，已可合併擷取的串流。",
+    playbackProgress: "影片擷取進度",
   },
 };
 

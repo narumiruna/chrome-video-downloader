@@ -3,6 +3,10 @@ import {
   type RawCollection,
 } from "../content/collect-video-candidates";
 import {
+  type PlaybackProgress,
+  parsePlaybackProgress,
+} from "../core/playback-progress";
+import {
   type VideoCandidate,
   validateCollectedVideos,
 } from "../core/video-candidate";
@@ -43,11 +47,13 @@ export interface CapturedVideo {
 export type ScanPageResult =
   | {
       status: "success";
+      tabId: number;
       pageTitle: string;
       pageUrl: string;
       candidates: VideoCandidate[];
       iframeUrls: string[];
       capturedVideos: CapturedVideo[];
+      playbackProgress: PlaybackProgress | null;
     }
   | { status: "restricted"; pageTitle: string }
   | { status: "error"; code: "no-active-tab" | "scan-failed" };
@@ -88,10 +94,13 @@ export function isRestrictedPageUrl(rawUrl: string): boolean {
   );
 }
 
-async function fetchCapturedVideos(
+async function fetchCaptureState(
   api: ChromeScanApi,
   tabId: number,
-): Promise<CapturedVideo[]> {
+): Promise<{
+  capturedVideos: CapturedVideo[];
+  playbackProgress: PlaybackProgress | null;
+}> {
   return new Promise((resolve) => {
     try {
       api.runtime.sendMessage(
@@ -105,14 +114,17 @@ async function fetchCapturedVideos(
           ) {
             const result = response as Record<string, unknown>;
             const videos = result.videos as CapturedVideo[] | undefined;
-            resolve(videos ?? []);
+            resolve({
+              capturedVideos: Array.isArray(videos) ? videos : [],
+              playbackProgress: parsePlaybackProgress(result.playback),
+            });
           } else {
-            resolve([]);
+            resolve({ capturedVideos: [], playbackProgress: null });
           }
         },
       );
     } catch {
-      resolve([]);
+      resolve({ capturedVideos: [], playbackProgress: null });
     }
   });
 }
@@ -148,8 +160,10 @@ export async function scanActivePage(
 
     const collection = validateCollectedVideos(injectionResult.result);
 
-    // Fetch captured videos from background service worker
-    const capturedVideos = await fetchCapturedVideos(api, tab.id);
+    const { capturedVideos, playbackProgress } = await fetchCaptureState(
+      api,
+      tab.id,
+    );
 
     const iframeUrls = injectionResult.result.iframeUrls;
 
@@ -159,7 +173,9 @@ export async function scanActivePage(
       iframeUrls,
       pageTitle: collection.pageTitle,
       pageUrl: collection.pageUrl,
+      playbackProgress,
       status: "success",
+      tabId: tab.id,
     };
   } catch {
     return { code: "scan-failed", status: "error" };

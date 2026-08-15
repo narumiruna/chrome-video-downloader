@@ -33,7 +33,19 @@ function apiWith(overrides: Partial<ChromeScanApi> = {}): ChromeScanApi {
     },
     runtime: {
       sendMessage: vi.fn().mockImplementation((_msg, cb) => {
-        cb?.({ status: "ok", videos: [] });
+        cb?.({
+          playback: {
+            assemblyReady: true,
+            currentTime: 30,
+            duration: 30,
+            ended: true,
+            isPlaying: false,
+            timestamp: 10,
+            videoId: "1",
+          },
+          status: "ok",
+          videos: [],
+        });
       }),
     },
     ...overrides,
@@ -81,12 +93,38 @@ describe("scanActivePage", () => {
     expect(result).toMatchObject({
       status: "success",
       pageTitle: "Fixture",
+      playbackProgress: expect.objectContaining({ assemblyReady: true }),
+      tabId: 7,
       candidates: [
         expect.objectContaining({
           support: { status: "downloadable" },
           url: "https://cdn.example.com/video.mp4",
         }),
       ],
+    });
+  });
+
+  test("rejects malformed playback state from the background boundary", async () => {
+    const api = apiWith({
+      runtime: {
+        sendMessage: vi.fn().mockImplementation((_message, callback) => {
+          callback?.({
+            playback: {
+              assemblyReady: true,
+              currentTime: Number.POSITIVE_INFINITY,
+            },
+            status: "ok",
+            videos: [],
+          });
+        }),
+      },
+    });
+
+    const result = await scanActivePage(api);
+
+    expect(result).toMatchObject({
+      playbackProgress: null,
+      status: "success",
     });
   });
 

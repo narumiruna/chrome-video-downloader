@@ -1,3 +1,4 @@
+import type { PlaybackProgress } from "../core/playback-progress";
 import type { VideoCandidate } from "../core/video-candidate";
 
 export type DownloadState = "starting" | "accepted" | "error";
@@ -9,6 +10,11 @@ export interface CapturedVideo {
   range?: string;
 }
 
+export type AssemblyView =
+  | { status: "idle" }
+  | { status: "fetching" | "muxing"; completed: number; total: number }
+  | { status: "accepted" | "error" };
+
 export type ScanView =
   | { status: "scanning" }
   | {
@@ -18,13 +24,16 @@ export type ScanView =
       iframeUrls: string[];
       pageTitle: string;
       pageUrl: string;
+      tabId: number;
     }
   | { status: "restricted"; pageTitle: string }
   | { status: "error" };
 
 export interface PopupState {
+  assembly: AssemblyView;
   scan: ScanView;
   downloads: Record<string, DownloadState>;
+  playbackProgress: PlaybackProgress | null;
 }
 
 export type PopupAction =
@@ -36,16 +45,28 @@ export type PopupAction =
       iframeUrls: string[];
       pageTitle: string;
       pageUrl: string;
+      playbackProgress: PlaybackProgress | null;
+      tabId: number;
     }
   | { type: "scan-restricted"; pageTitle: string }
   | { type: "scan-failed" }
   | {
       type: "download-started" | "download-accepted" | "download-failed";
       id: string;
+    }
+  | { type: "assembly-progress"; assembly: AssemblyView }
+  | { type: "playback-progress-update"; playback: PlaybackProgress }
+  | {
+      type: "assembly-ready";
+      capturedVideos: CapturedVideo[];
+      playback: PlaybackProgress;
+      tabId: number;
     };
 
 export const initialState: PopupState = {
+  assembly: { status: "idle" },
   downloads: {},
+  playbackProgress: null,
   scan: { status: "scanning" },
 };
 
@@ -57,6 +78,18 @@ function hasCandidate(state: PopupState, id: string): boolean {
   );
 }
 
+function scanStatus(
+  candidates: VideoCandidate[],
+): Extract<
+  ScanView,
+  { status: "found" | "unsupported-stream" | "empty" }
+>["status"] {
+  if (candidates.length === 0) return "empty";
+  return candidates.some(({ support }) => support.status === "downloadable")
+    ? "found"
+    : "unsupported-stream";
+}
+
 export function popupReducer(
   state: PopupState,
   action: PopupAction,
@@ -64,34 +97,28 @@ export function popupReducer(
   switch (action.type) {
     case "scan-started":
       return initialState;
-    case "scan-succeeded": {
-      const hasDownload = action.candidates.some(
-        ({ support }) => support.status === "downloadable",
-      );
+    case "scan-succeeded":
       return {
+        assembly: { status: "idle" },
         downloads: {},
+        playbackProgress: action.playbackProgress,
         scan: {
           candidates: action.candidates,
           capturedVideos: action.capturedVideos,
           iframeUrls: action.iframeUrls,
           pageTitle: action.pageTitle,
           pageUrl: action.pageUrl,
-          status:
-            action.candidates.length === 0
-              ? "empty"
-              : hasDownload
-                ? "found"
-                : "unsupported-stream",
+          status: scanStatus(action.candidates),
+          tabId: action.tabId,
         },
       };
-    }
     case "scan-restricted":
       return {
-        downloads: {},
+        ...initialState,
         scan: { pageTitle: action.pageTitle, status: "restricted" },
       };
     case "scan-failed":
-      return { downloads: {}, scan: { status: "error" } };
+      return { ...initialState, scan: { status: "error" } };
     case "download-started":
     case "download-accepted":
     case "download-failed": {
@@ -107,5 +134,26 @@ export function popupReducer(
         downloads: { ...state.downloads, [action.id]: downloadState },
       };
     }
+    case "assembly-progress":
+      return { ...state, assembly: action.assembly };
+    case "playback-progress-update":
+      return { ...state, playbackProgress: action.playback };
+    case "assembly-ready":
+      if (
+        state.scan.status !== "found" &&
+        state.scan.status !== "unsupported-stream" &&
+        state.scan.status !== "empty"
+      ) {
+        return state;
+      }
+      if (state.scan.tabId !== action.tabId) return state;
+      return {
+        ...state,
+        playbackProgress: action.playback,
+        scan: {
+          ...state.scan,
+          capturedVideos: action.capturedVideos,
+        },
+      };
   }
 }
