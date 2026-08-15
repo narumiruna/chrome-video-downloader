@@ -24,7 +24,7 @@ npm ci
 
 A separate local CLI can remux finite, unencrypted media that is already on your computer.
 
-It requires `ffmpeg` and `ffprobe` on `PATH` and never downloads media or accepts network URLs.
+It requires `ffmpeg` and `ffprobe` on `PATH` and never discovers, captures, or downloads media or accepts network URLs.
 
 ```sh
 npm run merge:segments -- \
@@ -32,7 +32,16 @@ npm run merge:segments -- \
   --output ./recording.mp4
 ```
 
-See the [local segment merger guide](docs/local-segment-merger.md) for ordered segment mode, overwrite behavior, validation, and limitations.
+It can also combine explicit local video and audio HLS media playlists, a bounded static local DASH presentation, or authorized local fragmented MP4/WebM tracks.
+
+```sh
+npm run merge:segments -- \
+  --video-playlist ./recording/video.m3u8 \
+  --audio-playlist ./recording/audio.m3u8 \
+  --output ./recording.mp4
+```
+
+See the [local segment merger guide](docs/local-segment-merger.md) for every input mode, representation selection, overwrite behavior, validation, and limitations.
 
 ## Develop
 
@@ -99,6 +108,7 @@ The production extension has no background worker, persistent content script, ho
 ## Product and release documents
 
 - [Local segment merger](docs/local-segment-merger.md)
+- [Local CLI third-party notices](docs/local-third-party-notices.md)
 - [Support matrix](docs/support-matrix.md)
 - [Privacy policy](docs/privacy.md)
 - [Chrome Web Store policy baseline](docs/policy-baseline.md)

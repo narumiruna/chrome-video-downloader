@@ -17,6 +17,11 @@ const forbiddenPatterns = [
   { label: "source map reference", pattern: /sourceMappingURL/ },
   { label: "localhost URL", pattern: /https?:\/\/(?:localhost|127\.0\.0\.1)/ },
   { label: "test token", pattern: /(?:fixture|top)-secret/ },
+  {
+    label: "local adaptive CLI runtime",
+    pattern:
+      /(?:DASH SegmentTemplate requires|fast-xml-parser|track manifest must use version 1)/,
+  },
   { label: "remote script", pattern: /<script[^>]+src=["']https?:\/\//i },
   {
     label: "remote CSS import",

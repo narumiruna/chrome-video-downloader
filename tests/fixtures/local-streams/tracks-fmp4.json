@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "video": {
+    "init": "dash/init-stream0.m4s",
+    "segments": ["dash/chunk-stream0-00001.m4s", "dash/chunk-stream0-00002.m4s"]
+  },
+  "audio": {
+    "init": "dash/init-stream1.m4s",
+    "segments": [
+      "dash/chunk-stream1-00001.m4s",
+      "dash/chunk-stream1-00002.m4s",
+      "dash/chunk-stream1-00003.m4s"
+    ]
+  }
+}

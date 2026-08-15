@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -14,6 +15,7 @@ import {
   type CommandRunner,
   mergeLocalSegments,
   runCommand,
+  type TrackChunkWriter,
   validateLocalHlsPlaylist,
 } from "../../src/local/segment-merger";
 
@@ -98,6 +100,17 @@ describe("validateLocalHlsPlaylist", () => {
       lines: [
         "#EXTM3U",
         '#EXT-X-KEY:METHOD=AES-128,URI="key.bin"',
+        "#EXTINF:1,",
+        "part.ts",
+        "#EXT-X-ENDLIST",
+      ],
+      code: "encrypted-input",
+    },
+    {
+      name: "duplicate encryption methods",
+      lines: [
+        "#EXTM3U",
+        '#EXT-X-KEY:METHOD=NONE,METHOD=AES-128,URI="key.bin"',
         "#EXTINF:1,",
         "part.ts",
         "#EXT-X-ENDLIST",
@@ -261,6 +274,191 @@ describe("mergeLocalSegments", () => {
     expect(calls[1]?.command).toBe("ffprobe");
     expect((await readdir(root)).some((name) => name.includes(".merge-"))).toBe(
       false,
+    );
+  });
+
+  test("maps paired local HLS video and audio playlists explicitly", async () => {
+    const root = await temporaryDirectory();
+    const videoPlaylist = join(root, "video.m3u8");
+    const audioPlaylist = join(root, "audio.m3u8");
+    const output = join(root, "result.mp4");
+    await writeFile(join(root, "video.m4s"), "video");
+    await writeFile(join(root, "audio.m4s"), "audio");
+    await writeFile(
+      videoPlaylist,
+      ["#EXTM3U", "#EXTINF:1,", "video.m4s", "#EXT-X-ENDLIST"].join("\n"),
+    );
+    await writeFile(
+      audioPlaylist,
+      ["#EXTM3U", "#EXTINF:1,", "audio.m4s", "#EXT-X-ENDLIST"].join("\n"),
+    );
+    const calls: Array<{ arguments_: string[]; command: string }> = [];
+    const runner: CommandRunner = async (command, arguments_) => {
+      calls.push({ arguments_, command });
+      if (command === "ffmpeg") {
+        await writeFile(arguments_.at(-1) as string, "merged");
+        return { stderr: "", stdout: "" };
+      }
+      return {
+        stderr: "",
+        stdout: JSON.stringify({
+          format: { duration: "1.0" },
+          streams: [
+            { codec_name: "h264", codec_type: "video", start_time: "0" },
+            { codec_name: "aac", codec_type: "audio", start_time: "0" },
+          ],
+        }),
+      };
+    };
+
+    const result = await mergeLocalSegments(
+      {
+        audioPlaylist,
+        output,
+        overwrite: false,
+        segments: [],
+        videoPlaylist,
+      },
+      { runCommand: runner },
+    );
+
+    expect(result.streamTypes).toEqual(["video", "audio"]);
+    expect(calls[0]?.arguments_).toEqual(
+      expect.arrayContaining([
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-protocol_whitelist",
+        "file",
+      ]),
+    );
+    expect(calls[0]?.arguments_.filter((item) => item === "-i")).toHaveLength(
+      2,
+    );
+    expect(
+      (await readdir(root)).some((name) => name.includes(".playlist-")),
+    ).toBe(false);
+  });
+
+  test("assembles ordered fragmented tracks before remuxing", async () => {
+    const root = await temporaryDirectory();
+    const output = join(root, "result.mp4");
+    for (const [name, content] of [
+      ["video-init.m4s", "video-init|"],
+      ["video-1.m4s", "video-one|"],
+      ["video-2.m4s", "video-two|"],
+      ["audio-init.m4s", "audio-init|"],
+      ["audio-1.m4s", "audio-one|"],
+    ]) {
+      await writeFile(join(root, name), content);
+    }
+    const tracks = join(root, "tracks.json");
+    await writeFile(
+      tracks,
+      JSON.stringify({
+        version: 1,
+        video: {
+          init: "video-init.m4s",
+          segments: ["video-1.m4s", "video-2.m4s"],
+        },
+        audio: {
+          init: "audio-init.m4s",
+          segments: ["audio-1.m4s"],
+        },
+      }),
+    );
+    let assembledVideo = "";
+    let assembledAudio = "";
+    let inputModes: number[] = [];
+    const runner: CommandRunner = async (command, arguments_) => {
+      if (command === "ffmpeg") {
+        const inputs = arguments_
+          .map((argument, index) =>
+            argument === "-i" ? arguments_[index + 1] : undefined,
+          )
+          .filter((value): value is string => Boolean(value));
+        assembledVideo = await readFile(inputs[0] as string, "utf8");
+        assembledAudio = await readFile(inputs[1] as string, "utf8");
+        inputModes = await Promise.all(
+          inputs.map(async (path) => (await stat(path)).mode & 0o777),
+        );
+        await writeFile(arguments_.at(-1) as string, "merged");
+        return { stderr: "", stdout: "" };
+      }
+      return {
+        stderr: "",
+        stdout: JSON.stringify({
+          format: { duration: "2.0" },
+          streams: [
+            {
+              codec_name: "h264",
+              codec_type: "video",
+              duration: "2",
+              start_time: "0",
+            },
+            {
+              codec_name: "aac",
+              codec_type: "audio",
+              duration: "2.02",
+              start_time: "0",
+            },
+          ],
+        }),
+      };
+    };
+
+    await mergeLocalSegments(
+      { output, overwrite: false, segments: [], tracks },
+      { runCommand: runner },
+    );
+
+    expect(assembledVideo).toBe("video-init|video-one|video-two|");
+    expect(assembledAudio).toBe("audio-init|audio-one|");
+    expect(inputModes).toEqual([0o600, 0o600]);
+    expect((await readdir(root)).some((name) => name.includes(".track-"))).toBe(
+      false,
+    );
+  });
+
+  test("routes a bounded DASH manifest through track assembly", async () => {
+    const root = await temporaryDirectory();
+    const output = join(root, "result.mp4");
+    for (const name of ["v-init.m4s", "v-1.m4s", "a-init.m4s", "a-1.m4s"]) {
+      await writeFile(join(root, name), name);
+    }
+    const dash = join(root, "presentation.mpd");
+    await writeFile(
+      dash,
+      `<MPD type="static"><Period><AdaptationSet contentType="video"><Representation id="v" mimeType="video/mp4"><SegmentList><Initialization sourceURL="v-init.m4s"/><SegmentURL media="v-1.m4s"/></SegmentList></Representation></AdaptationSet><AdaptationSet contentType="audio"><Representation id="a" mimeType="audio/mp4"><SegmentList><Initialization sourceURL="a-init.m4s"/><SegmentURL media="a-1.m4s"/></SegmentList></Representation></AdaptationSet></Period></MPD>`,
+    );
+    const calls: Array<{ arguments_: string[]; command: string }> = [];
+    const runner: CommandRunner = async (command, arguments_) => {
+      calls.push({ arguments_, command });
+      if (command === "ffmpeg") {
+        await writeFile(arguments_.at(-1) as string, "merged");
+        return { stderr: "", stdout: "" };
+      }
+      return {
+        stderr: "",
+        stdout: JSON.stringify({
+          format: { duration: "1" },
+          streams: [
+            { codec_name: "h264", codec_type: "video", start_time: "0" },
+            { codec_name: "aac", codec_type: "audio", start_time: "0" },
+          ],
+        }),
+      };
+    };
+
+    const result = await mergeLocalSegments(
+      { dash, output, overwrite: false, segments: [] },
+      { runCommand: runner },
+    );
+
+    expect(result.outputPath).toBe(output);
+    expect(calls[0]?.arguments_.filter((item) => item === "-i")).toHaveLength(
+      2,
     );
   });
 
@@ -504,6 +702,206 @@ describe("mergeLocalSegments", () => {
       code: "merge-failed",
       message: "The merge was cancelled.",
     });
+  });
+
+  test("cancels track assembly without starting FFmpeg or leaving temporary files", async () => {
+    const root = await temporaryDirectory();
+    const large = Buffer.alloc(8 * 1_024 * 1_024, 1);
+    await writeFile(join(root, "init.m4s"), large);
+    await writeFile(join(root, "part.m4s"), large);
+    const tracks = join(root, "tracks.json");
+    await writeFile(
+      tracks,
+      JSON.stringify({
+        version: 1,
+        video: { init: "init.m4s", segments: ["part.m4s"] },
+      }),
+    );
+    const controller = new AbortController();
+    const runCommand = vi.fn<CommandRunner>();
+    const merge = mergeLocalSegments(
+      {
+        output: join(root, "result.mp4"),
+        overwrite: false,
+        segments: [],
+        tracks,
+      },
+      { runCommand, signal: controller.signal },
+    );
+    setImmediate(() => controller.abort());
+
+    await expect(merge).rejects.toMatchObject({
+      code: "merge-failed",
+      message: "The merge was cancelled.",
+    });
+    expect(runCommand).not.toHaveBeenCalled();
+    expect((await readdir(root)).some((name) => name.includes(".track-"))).toBe(
+      false,
+    );
+  });
+
+  test("removes a partial assembled track after a disk-write failure", async () => {
+    const root = await temporaryDirectory();
+    await writeFile(join(root, "init.m4s"), "initialization");
+    await writeFile(join(root, "part.m4s"), "fragment");
+    const tracks = join(root, "tracks.json");
+    await writeFile(
+      tracks,
+      JSON.stringify({
+        version: 1,
+        video: { init: "init.m4s", segments: ["part.m4s"] },
+      }),
+    );
+    let writeCount = 0;
+    const writeTrackChunk: TrackChunkWriter = async (
+      target,
+      buffer,
+      offset,
+      length,
+    ) => {
+      writeCount += 1;
+      if (writeCount === 1) {
+        return (await target.write(buffer, offset, Math.min(length, 1)))
+          .bytesWritten;
+      }
+      throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    };
+    const runCommand = vi.fn<CommandRunner>();
+
+    await expect(
+      mergeLocalSegments(
+        {
+          output: join(root, "result.mp4"),
+          overwrite: false,
+          segments: [],
+          tracks,
+        },
+        { runCommand, writeTrackChunk },
+      ),
+    ).rejects.toMatchObject({ code: "merge-failed" });
+    expect(runCommand).not.toHaveBeenCalled();
+    expect((await readdir(root)).some((name) => name.includes(".track-"))).toBe(
+      false,
+    );
+  });
+
+  test.each([
+    { name: "malformed probe JSON", stdout: "not json" },
+    {
+      name: "missing expected audio",
+      stdout: JSON.stringify({
+        format: { duration: "1" },
+        streams: [{ codec_name: "h264", codec_type: "video", start_time: "0" }],
+      }),
+    },
+    {
+      name: "non-finite output duration",
+      stdout: JSON.stringify({
+        format: { duration: "N/A" },
+        streams: [
+          { codec_name: "h264", codec_type: "video", start_time: "0" },
+          { codec_name: "aac", codec_type: "audio", start_time: "0" },
+        ],
+      }),
+    },
+  ])("rejects $name before publication", async ({ stdout }) => {
+    const root = await temporaryDirectory();
+    const videoPlaylist = join(root, "video.m3u8");
+    const audioPlaylist = join(root, "audio.m3u8");
+    await writeFile(join(root, "video.m4s"), "video");
+    await writeFile(join(root, "audio.m4s"), "audio");
+    await writeFile(
+      videoPlaylist,
+      "#EXTM3U\n#EXTINF:1,\nvideo.m4s\n#EXT-X-ENDLIST",
+    );
+    await writeFile(
+      audioPlaylist,
+      "#EXTM3U\n#EXTINF:1,\naudio.m4s\n#EXT-X-ENDLIST",
+    );
+    const output = join(root, "result.mp4");
+    const runCommand: CommandRunner = async (command, arguments_) => {
+      if (command === "ffmpeg") {
+        await writeFile(arguments_.at(-1) as string, "merged");
+        return { stderr: "", stdout: "" };
+      }
+      return { stderr: "", stdout };
+    };
+
+    await expect(
+      mergeLocalSegments(
+        {
+          audioPlaylist,
+          output,
+          overwrite: false,
+          segments: [],
+          videoPlaylist,
+        },
+        { runCommand },
+      ),
+    ).rejects.toMatchObject({ code: "verification-failed" });
+    await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readdir(root)).some((name) => name.includes(".merge-"))).toBe(
+      false,
+    );
+  });
+
+  test("rejects an output with excessive audio-video timing skew", async () => {
+    const root = await temporaryDirectory();
+    const video = join(root, "video.m4s");
+    const audio = join(root, "audio.m4s");
+    const videoPlaylist = join(root, "video.m3u8");
+    const audioPlaylist = join(root, "audio.m3u8");
+    await writeFile(video, "video");
+    await writeFile(audio, "audio");
+    await writeFile(
+      videoPlaylist,
+      "#EXTM3U\n#EXTINF:1,\nvideo.m4s\n#EXT-X-ENDLIST",
+    );
+    await writeFile(
+      audioPlaylist,
+      "#EXTM3U\n#EXTINF:1,\naudio.m4s\n#EXT-X-ENDLIST",
+    );
+    const output = join(root, "result.mp4");
+    const runCommand: CommandRunner = async (command, arguments_) => {
+      if (command === "ffmpeg") {
+        await writeFile(arguments_.at(-1) as string, "merged");
+        return { stderr: "", stdout: "" };
+      }
+      return {
+        stderr: "",
+        stdout: JSON.stringify({
+          format: { duration: "2" },
+          streams: [
+            {
+              codec_name: "h264",
+              codec_type: "video",
+              duration: "1",
+              start_time: "0",
+            },
+            {
+              codec_name: "aac",
+              codec_type: "audio",
+              duration: "2",
+              start_time: "0.5",
+            },
+          ],
+        }),
+      };
+    };
+
+    await expect(
+      mergeLocalSegments(
+        {
+          audioPlaylist,
+          output,
+          overwrite: false,
+          segments: [],
+          videoPlaylist,
+        },
+        { runCommand },
+      ),
+    ).rejects.toMatchObject({ code: "verification-failed" });
+    await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("rejects an output with no verified audio or video streams", async () => {

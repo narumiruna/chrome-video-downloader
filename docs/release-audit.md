@@ -5,11 +5,11 @@ Audit date: August 15, 2026.
 ## Automated evidence
 
 - `npm run check` passes Biome across source, tests, fixtures, scripts, and documentation-supported formats.
-- `npm test` passes 89 unit and component tests, including injected-boundary limits and local segment merger lifecycle coverage.
+- `npm test` passes 141 unit and component tests, including adaptive-manifest validation, injected-boundary limits, and local segment merger lifecycle coverage.
 - `npm run typecheck` passes TypeScript strict checking.
-- `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for a one-second local HLS fixture and two seconds of explicitly ordered local MPEG-TS input.
+- `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for legacy HLS and ordered MPEG-TS plus separate-track HLS, static DASH, fragmented MP4, and fragmented WebM inputs.
 - `npm run build:chrome` produces `dist/chrome` and `video-downloader-0.1.0.zip` with Extension.js 4.0.32.
-- `npm run test:e2e:built` passes eight Chromium extension tests against locally generated fixtures.
+- `npm run test:e2e:built` passes nine Chromium extension tests against locally generated fixtures.
 - Direct MP4, WebM, dynamic, extensionless, and authenticated fixture downloads match expected SHA-256 hashes.
 - Blob, HLS, DASH, segment-heavy, and cross-origin iframe fixtures create no misleading download action.
 - Axe reports no accessibility violations in the populated popup fixture.
@@ -37,6 +37,10 @@ Only credential-free HTTP(S) direct candidates pass the download adapter's secon
 
 Signed query strings remain in the actual URL but never appear in display names, user-facing errors, diagnostics, or storage.
 
+The local merger rejects network URLs, DTDs, XML entities, external DASH references, escaping paths, encryption, live input, and unsupported ambiguity before FFmpeg starts.
+
+FFmpeg and FFprobe run without a shell with `file` as the only permitted protocol, and separate-track outputs are verified before atomic publication.
+
 The extension has no analytics, server, persistent state, logs, remote assets, or remote executable code.
 
 ## Lifecycle review
@@ -53,7 +57,7 @@ No page observer, injected DOM, event listener, content script registration, bac
 
 ## Dependency review
 
-The shipped dependency graph reports no known vulnerability through `npm audit --omit=dev`.
+The shipped dependency graph, including `fast-xml-parser` 5.10.1 for the local DASH CLI, reports no known vulnerability through `npm audit --omit=dev`.
 
 The full development graph reports six high-severity advisories under Extension.js tooling, including archive extraction and image parsing paths.
 
