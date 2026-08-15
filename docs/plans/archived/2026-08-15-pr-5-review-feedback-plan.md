@@ -25,13 +25,13 @@ The pre-existing `skills-lock.json`, `.agents/skills/writing-plans/`, `downloads
 - [x] Release detached video registrations in `src/content/playback-monitor.ts` and add nested-removal regression coverage in `tests/content/playback-monitor.test.ts`; evidence: focused Vitest run passed.
 - [x] Inspect the full resulting diff for the same readiness and detached-registration patterns; evidence: targeted `rg` inspection found no remaining ready-copy gate on `ended` and found removal cleanup at the sole monitor registration site.
 - [x] Run `npm run ci`; evidence: Biome passed with one pre-existing untracked-file info, 155 Vitest tests passed, typecheck passed, merger integration passed, dependency audit found zero vulnerabilities, build passed, 10 Playwright tests passed, and artifact audit passed.
-- [ ] Re-read PR feedback, update the ledger, reply to and resolve verified threads, and archive this completed plan.
-- [ ] Stage only intended paths, create signed Conventional Commits, push the branch, and refresh PR #5 once.
+- [x] Re-read PR feedback, update the ledger, and reply to and resolve verified threads; evidence: both GraphQL thread states returned `isResolved: true` after evidence-bearing replies.
+- [x] Stage only intended paths, create a signed Conventional Commit, and push the branch; evidence: signed commit `ec5fa88` is on `origin/narumi/feat/playback-auto-assemble`.
 
 ## Completion Checklist
 
 - [x] Both substantive review items have evidence-backed final outcomes.
 - [x] Focused regressions and all repository checks pass.
 - [x] Unrelated working-tree changes remain unstaged and unmodified.
-- [ ] The signed fix commit is pushed to PR #5.
-- [ ] Both addressed review threads are replied to and resolved.
+- [x] The signed fix commit is pushed to PR #5.
+- [x] Both addressed review threads are replied to and resolved.
