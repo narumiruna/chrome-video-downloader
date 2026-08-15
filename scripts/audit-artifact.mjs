@@ -3,11 +3,16 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 
 const artifactRoot = resolve("dist/chrome");
-const expectedPermissions = ["activeTab", "downloads", "scripting"];
+const expectedPermissions = [
+  "activeTab",
+  "alarms",
+  "downloads",
+  "scripting",
+  "webRequest",
+];
+const expectedHostPermissions = ["<all_urls>"];
 const forbiddenManifestKeys = [
-  "background",
   "content_scripts",
-  "host_permissions",
   "optional_host_permissions",
   "optional_permissions",
 ];
@@ -36,6 +41,7 @@ const requiredFiles = [
   "action/index.css",
   "action/index.html",
   "action/index.js",
+  "background/service_worker.js",
   "images/icon-128.png",
   "manifest.json",
 ];
@@ -58,6 +64,14 @@ const permissions = [...(manifest.permissions ?? [])].sort();
 if (JSON.stringify(permissions) !== JSON.stringify(expectedPermissions)) {
   failures.push(`unexpected permissions: ${JSON.stringify(permissions)}`);
 }
+const hostPermissions = [...(manifest.host_permissions ?? [])].sort();
+if (
+  JSON.stringify(hostPermissions) !== JSON.stringify(expectedHostPermissions)
+) {
+  failures.push(
+    `unexpected host permissions: ${JSON.stringify(hostPermissions)}`,
+  );
+}
 for (const key of forbiddenManifestKeys) {
   if (key in manifest) failures.push(`forbidden manifest key: ${key}`);
 }
@@ -67,6 +81,9 @@ if (manifest.minimum_chrome_version !== "96") {
 }
 if (manifest.action?.default_popup !== "action/index.html") {
   failures.push("action popup path is missing or unexpected");
+}
+if (manifest.background?.service_worker !== "background/service_worker.js") {
+  failures.push("background service worker path is missing or unexpected");
 }
 
 const files = await walk(artifactRoot);

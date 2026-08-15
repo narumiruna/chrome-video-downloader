@@ -240,6 +240,165 @@ footer {
   line-height: 1.45;
 }
 
+/* Iframe info section */
+.iframe-info-section {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: #f0f4f8;
+  border-radius: 0.75rem;
+  border: 1px solid #d1d9e0;
+}
+
+.iframe-info-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #1a2330;
+}
+
+.iframe-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.iframe-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.iframe-item:last-child {
+  border-bottom: none;
+}
+
+.iframe-link {
+  flex: 1;
+  color: #1769d2;
+  text-decoration: none;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iframe-link:hover {
+  text-decoration: underline;
+}
+
+.iframe-tag {
+  font-size: 0.65rem;
+  padding: 0.12rem 0.35rem;
+  background: #d1ecf1;
+  color: #0c5460;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.iframe-hint {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Captured video section */
+.captured-video-section {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 0.75rem;
+  border: 1px solid #dee2e6;
+}
+
+.captured-video-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #1a2330;
+}
+
+.captured-video-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.captured-video-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+.captured-video-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.captured-video-item:last-child {
+  border-bottom: none;
+}
+
+.captured-video-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 5rem;
+}
+
+.captured-video-type {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.25rem;
+  background: #d4edda;
+  color: #155724;
+  border-radius: 0.2rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.captured-video-time {
+  font-size: 0.65rem;
+  color: #6c757d;
+}
+
+.captured-video-link {
+  flex: 1;
+  color: #1769d2;
+  text-decoration: none;
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.captured-video-link:hover {
+  text-decoration: underline;
+}
+
+.download-captured-button {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  background: #1769d2;
+  color: white;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.download-captured-button:hover {
+  background: #0f56b3;
+}
+
 .scrollbar {
   display: flex;
   width: 0.45rem;

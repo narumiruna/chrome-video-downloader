@@ -20,6 +20,7 @@ import {
   type SupportedLocale,
   unsupportedReason,
 } from "./messages";
+import type { CapturedVideo } from "./state";
 import { initialState, popupReducer } from "./state";
 import "./styles.css";
 
@@ -27,6 +28,7 @@ export interface AppProps {
   locale?: SupportedLocale;
   scanPage?: () => Promise<ScanPageResult>;
   downloadVideo?: (candidate: VideoCandidate) => Promise<DownloadResult>;
+  getCapturedVideos?: () => Promise<CapturedVideo[]>;
 }
 
 function formatDuration(seconds: number): string {
@@ -53,6 +55,7 @@ export function App({
   locale: requestedLocale,
   scanPage = scanActivePage,
   downloadVideo = startVideoDownload,
+  getCapturedVideos,
 }: AppProps) {
   const locale = useMemo(
     () => resolveLocale(requestedLocale),
@@ -75,9 +78,21 @@ export function App({
       if (!mountedRef.current || scanVersionRef.current !== version) return;
       setAnnouncement("");
       if (result.status === "success") {
+        let capturedVideos: CapturedVideo[] = result.capturedVideos;
+
+        if (getCapturedVideos) {
+          try {
+            capturedVideos = await getCapturedVideos();
+          } catch {
+            // Keep the videos returned by the page scan.
+          }
+        }
+
         dispatch({
           type: "scan-succeeded",
           candidates: result.candidates,
+          capturedVideos,
+          iframeUrls: result.iframeUrls,
           pageTitle: result.pageTitle,
           pageUrl: result.pageUrl,
         });
@@ -91,7 +106,7 @@ export function App({
       setAnnouncement("");
       dispatch({ type: "scan-failed" });
     }
-  }, [copy.scanning, scanPage]);
+  }, [copy.scanning, scanPage, getCapturedVideos]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -216,6 +231,102 @@ export function App({
     );
   }
 
+  function iframeInfoSection(iframeUrls: string[]) {
+    if (iframeUrls.length === 0) return null;
+
+    // Filter to show only video-related iframes
+    const videoIframes = iframeUrls.filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return (
+          parsed.hostname.includes("vimeo") ||
+          parsed.hostname.includes("youtube") ||
+          parsed.pathname.includes("video") ||
+          parsed.pathname.includes("embed")
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    if (videoIframes.length === 0) return null;
+
+    return (
+      <div className="iframe-info-section">
+        <h3>Detected video iframes</h3>
+        <ul className="iframe-list">
+          {videoIframes.map((url) => (
+            <li key={url} className="iframe-item">
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="iframe-link"
+              >
+                {url.length > 80 ? `${url.substring(0, 80)}...` : url}
+              </a>
+              <span className="iframe-tag">video</span>
+            </li>
+          ))}
+        </ul>
+        <p className="iframe-hint">
+          Click to open the video page. The extension can capture video URLs
+          from this iframe.
+        </p>
+      </div>
+    );
+  }
+
+  function capturedVideoSection(capturedVideos: CapturedVideo[]) {
+    if (capturedVideos.length === 0) return null;
+
+    return (
+      <div className="captured-video-section">
+        <h3>Captured video URLs</h3>
+        <p className="captured-video-hint">
+          These video URLs were detected during page navigation. Click to
+          download.
+        </p>
+        <ul className="captured-video-list">
+          {capturedVideos.map((video) => (
+            <li
+              key={video.url + video.timestamp}
+              className="captured-video-item"
+            >
+              <div className="captured-video-info">
+                <span className="captured-video-type">
+                  {video.mimeType || "video"}
+                </span>
+                <span className="captured-video-time">
+                  {new Date(video.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <a
+                href={video.url}
+                className="captured-video-link"
+                title={video.url}
+              >
+                {video.url.length > 60
+                  ? `${video.url.substring(0, 60)}...`
+                  : video.url}
+              </a>
+              <button
+                type="button"
+                className="download-captured-button"
+                onClick={() => {
+                  // Trigger download via window.open for background URLs
+                  window.open(video.url, "_blank");
+                }}
+              >
+                Download
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
   function content() {
     switch (state.scan.status) {
       case "scanning":
@@ -235,6 +346,8 @@ export function App({
               </div>
               {scanButton()}
             </div>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(state.scan.capturedVideos)}
             {candidateList(state.scan.candidates)}
           </>
         );
@@ -242,6 +355,8 @@ export function App({
         return (
           <section className="state-panel">
             <h1>{copy.unsupportedTitle}</h1>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(state.scan.capturedVideos)}
             {candidateList(state.scan.candidates)}
             {scanButton()}
           </section>
@@ -252,6 +367,8 @@ export function App({
           <section className="state-panel">
             <h1>{copy.emptyTitle}</h1>
             <p>{copy.emptyMessage}</p>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(state.scan.capturedVideos)}
             {scanButton()}
           </section>
         );

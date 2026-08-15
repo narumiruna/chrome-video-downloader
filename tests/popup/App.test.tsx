@@ -38,6 +38,8 @@ const hls: VideoCandidate = {
 function success(candidates: VideoCandidate[]): ScanPageResult {
   return {
     candidates,
+    capturedVideos: [],
+    iframeUrls: [],
     pageTitle: "Training lesson",
     pageUrl: "https://example.com/watch?private=value",
     status: "success",

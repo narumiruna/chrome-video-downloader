@@ -2,11 +2,19 @@ import type { VideoCandidate } from "../core/video-candidate";
 
 export type DownloadState = "starting" | "accepted" | "error";
 
+export interface CapturedVideo {
+  url: string;
+  mimeType: string;
+  timestamp: number;
+}
+
 export type ScanView =
   | { status: "scanning" }
   | {
       status: "found" | "unsupported-stream" | "empty";
       candidates: VideoCandidate[];
+      capturedVideos: CapturedVideo[];
+      iframeUrls: string[];
       pageTitle: string;
       pageUrl: string;
     }
@@ -23,6 +31,8 @@ export type PopupAction =
   | {
       type: "scan-succeeded";
       candidates: VideoCandidate[];
+      capturedVideos: CapturedVideo[];
+      iframeUrls: string[];
       pageTitle: string;
       pageUrl: string;
     }
@@ -61,6 +71,8 @@ export function popupReducer(
         downloads: {},
         scan: {
           candidates: action.candidates,
+          capturedVideos: action.capturedVideos,
+          iframeUrls: action.iframeUrls,
           pageTitle: action.pageTitle,
           pageUrl: action.pageUrl,
           status:

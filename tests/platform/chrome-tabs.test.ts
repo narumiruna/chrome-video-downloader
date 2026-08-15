@@ -24,11 +24,17 @@ function apiWith(overrides: Partial<ChromeScanApi> = {}): ChromeScanApi {
                 url: "https://cdn.example.com/video.mp4",
               },
             ],
+            iframeUrls: [],
             pageTitle: "Fixture",
             pageUrl: "https://example.com/watch",
           },
         },
       ]),
+    },
+    runtime: {
+      sendMessage: vi.fn().mockImplementation((_msg, cb) => {
+        cb?.({ status: "ok", videos: [] });
+      }),
     },
     ...overrides,
   };

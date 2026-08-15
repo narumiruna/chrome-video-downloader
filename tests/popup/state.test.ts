@@ -26,6 +26,8 @@ describe("popupReducer", () => {
     const found = popupReducer(initialState, {
       type: "scan-succeeded",
       candidates: [hls, direct],
+      capturedVideos: [],
+      iframeUrls: [],
       pageTitle: "Fixture",
       pageUrl: "https://example.com",
     });
@@ -34,6 +36,8 @@ describe("popupReducer", () => {
     const unsupported = popupReducer(found, {
       type: "scan-succeeded",
       candidates: [hls],
+      capturedVideos: [],
+      iframeUrls: [],
       pageTitle: "Fixture",
       pageUrl: "https://example.com",
     });
@@ -42,6 +46,8 @@ describe("popupReducer", () => {
     const empty = popupReducer(found, {
       type: "scan-succeeded",
       candidates: [],
+      capturedVideos: [],
+      iframeUrls: [],
       pageTitle: "Fixture",
       pageUrl: "https://example.com",
     });
@@ -60,6 +66,8 @@ describe("popupReducer", () => {
     const found = popupReducer(initialState, {
       type: "scan-succeeded",
       candidates: [direct, { ...direct, id: "second" }],
+      capturedVideos: [],
+      iframeUrls: [],
       pageTitle: "Fixture",
       pageUrl: "https://example.com",
     });
