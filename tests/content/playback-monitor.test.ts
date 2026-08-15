@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   type PlaybackRuntime,
   startPlaybackMonitor,
@@ -17,6 +17,10 @@ function setMediaState(
     Object.defineProperty(video, name, { configurable: true, value });
   }
 }
+
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 describe("startPlaybackMonitor", () => {
   test("reports bounded playback state and completion for existing videos", () => {
@@ -105,6 +109,34 @@ describe("startPlaybackMonitor", () => {
     expect(JSON.stringify(sendMessage.mock.calls)).not.toContain(
       "token=secret",
     );
+    stop();
+  });
+
+  test("releases registrations for videos in detached subtrees", async () => {
+    const sendMessage = vi.fn((_message, callback?: () => void) =>
+      callback?.(),
+    );
+    const stop = startPlaybackMonitor({ sendMessage });
+    const container = document.createElement("section");
+    const video = document.createElement("video");
+    setMediaState(video, {
+      currentTime: 1,
+      duration: 10,
+      ended: false,
+      paused: false,
+    });
+    container.append(video);
+    document.body.append(container);
+    await Promise.resolve();
+
+    video.dispatchEvent(new Event("play"));
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    container.remove();
+    await Promise.resolve();
+    video.dispatchEvent(new Event("play"));
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
     stop();
   });
 });

@@ -216,6 +216,30 @@ describe("App", () => {
     ).toBeVisible();
     act(() => {
       listener?.({
+        type: "playbackProgress",
+        playback: {
+          assemblyReady: false,
+          currentTime: 60,
+          duration: 60,
+          ended: true,
+          isPlaying: false,
+          timestamp: 3,
+          videoId: "1",
+        },
+        tabId: 7,
+      });
+    });
+
+    expect(
+      screen.getByText("Playback capture progress: 60/60 (100%)"),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Playback complete. The captured stream is ready."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Assemble MP4" })).toBeEnabled();
+
+    act(() => {
+      listener?.({
         type: "triggerAssembly",
         playback: {
           assemblyReady: true,
@@ -231,9 +255,6 @@ describe("App", () => {
       });
     });
 
-    expect(
-      screen.getByText("Playback capture progress: 60/60 (100%)"),
-    ).toBeVisible();
     expect(
       screen.getAllByText("Playback complete. The captured stream is ready."),
     ).toHaveLength(2);

@@ -553,7 +553,7 @@ export function App({
               {formatDuration(playback.duration)} (
               {Math.round(playbackPercentage)}%)
             </p>
-            {playback.ended ? (
+            {playback.assemblyReady ? (
               <p className="status-badge success">{copy.playbackComplete}</p>
             ) : null}
           </div>

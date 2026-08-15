@@ -97,10 +97,23 @@ export function startPlaybackMonitor(
     if (!(node instanceof Element)) return;
     for (const video of node.querySelectorAll("video")) watch(video);
   };
+  const release = (video: HTMLVideoElement): void => {
+    if (video.isConnected) return;
+    const registration = watched.get(video);
+    if (!registration) return;
+    registration.cleanup();
+    watched.delete(video);
+  };
+  const releaseNode = (node: Node): void => {
+    if (node instanceof HTMLVideoElement) release(node);
+    if (!(node instanceof Element)) return;
+    for (const video of node.querySelectorAll("video")) release(video);
+  };
 
   for (const video of document.querySelectorAll("video")) watch(video);
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      for (const node of mutation.removedNodes) releaseNode(node);
       for (const node of mutation.addedNodes) scanNode(node);
     }
   });
