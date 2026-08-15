@@ -5,13 +5,13 @@ Audit date: August 15, 2026.
 ## Automated evidence
 
 - `npm run check` passes Biome across source, tests, fixtures, scripts, and documentation-supported formats.
-- `npm test` passes 147 unit and component tests, including browser-side fragmented MP4 video/audio remuxing, adaptive-manifest validation, injected-boundary limits, and local segment merger lifecycle coverage.
+- `npm test` passes 149 unit and component tests, including browser-side fragmented MP4 video/audio remuxing with embedded initialization metadata, adaptive-manifest validation, injected-boundary limits, and local segment merger lifecycle coverage.
 - `npm run typecheck` passes TypeScript strict checking.
 - `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for legacy HLS and ordered MPEG-TS plus separate-track HLS, static DASH, fragmented MP4, and fragmented WebM inputs.
 - `npm run build:chrome` produces `dist/chrome` and `video-downloader-0.1.0.zip` with Extension.js 4.0.32.
 - `npm run test:e2e:built` passes ten Chromium extension tests against locally generated fixtures, including browser-side fMP4 assembly.
 - Direct MP4, WebM, dynamic, extensionless, and authenticated fixture downloads match expected SHA-256 hashes.
-- Individual captured URLs are not presented as complete downloads, and compatible MP4 video/audio fragments are grouped behind one assembly action.
+- Individual captured URLs are not presented as complete downloads, and compatible MP4 video/audio fragments plus bounded initialization metadata are grouped behind one assembly action.
 - A controlled unpacked-extension check assembled shuffled H.264 and AAC fMP4 fragments into a 62,654-byte MP4 with both tracks and a 2.021-second duration.
 - Axe reports no accessibility violations in the populated popup fixture.
 - Keyboard focus order, reduced motion, stable popup proportions, and 200% text scaling pass automated checks.
@@ -38,7 +38,7 @@ The validator bounds strings, numbers, URLs, and candidate count before data rea
 
 Only credential-free HTTP(S) direct candidates pass the direct-download adapter's second runtime check.
 
-Captured HTTP(S) fragment URLs and byte ranges remain in memory, are bounded per tab, and are never rendered or persisted.
+Captured HTTP(S) fragment URLs, supported playlist-metadata URLs, and byte ranges remain in memory, are bounded per tab, and are never rendered or persisted.
 
 Signed query strings remain in actual requests but never appear in display names, user-facing errors, diagnostics, or storage.
 

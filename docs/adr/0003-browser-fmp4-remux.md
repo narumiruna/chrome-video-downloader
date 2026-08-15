@@ -14,9 +14,9 @@ The extension must not parse arbitrary adaptive manifests, decrypt media, inspec
 
 ## Evidence
 
-The repository-owned fixture contains separate H.264 video and AAC audio initialization segments plus shuffled fMP4 media fragments.
+The repository-owned fixture exposes embedded H.264 and AAC initialization data through bounded captured playlist metadata plus shuffled fMP4 media fragments.
 
-The browser implementation identifies initialization data by `ftyp` and `moov`, orders media fragments by `tfdt`, and remuxes the tracks with the locally bundled Mediabunny library.
+The browser implementation identifies initialization data by `ftyp` and `moov`, matches embedded initialization data to exact captured segment URLs, orders media fragments by `tfdt`, and remuxes the tracks with the locally bundled Mediabunny library.
 
 Unit evidence verifies one output containing both tracks with a duration above two seconds.
 
@@ -30,9 +30,13 @@ Cap captures at 1,000 unique URL-and-range records per tab in `storage.session` 
 
 Never present individual captured fragments as complete video downloads.
 
-When the user chooses **Assemble MP4**, refetch only captured `video/mp4` and `audio/mp4` responses from their original hosts.
+When the user chooses **Assemble MP4**, refetch captured `video/mp4` and `audio/mp4` responses plus a captured JSON `playlist.json` response when it supplies embedded initialization data.
 
-Require an MP4 initialization segment for every included track.
+Limit accepted playlist metadata to 16 MiB, 32 tracks per media kind, 20,000 segments per track, 50,000 total references, and 2 MiB per decoded initialization segment.
+
+Select one metadata track only when it has a unique highest count of exact captured segment-URL matches.
+
+Require an MP4 initialization segment from a captured media response or matched embedded metadata for every included track.
 
 Sort fragmented media by `tfdt`, reject empty or oversized parts, cap total in-memory input at 512 MiB, and deduplicate repeated decode times.
 
@@ -42,7 +46,7 @@ Publish the result through Chrome's download manager only after successful final
 
 ## Boundaries
 
-General HLS and DASH manifest parsing remains unsupported.
+General HLS and DASH manifest parsing remains unsupported; the only accepted playback metadata is a captured HTTP(S) JSON response whose path ends in `/playlist.json` and whose bounded structure supplies initialization data for exact captured MP4 segment URLs.
 
 Encrypted media, DRM, missing initialization data, expired URLs, mixed incompatible representations, live capture, non-MP4 fragments, repair, and access-control bypass remain unsupported.
 

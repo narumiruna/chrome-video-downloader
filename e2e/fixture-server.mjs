@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -95,6 +95,47 @@ async function sendFile(request, response, path, options = {}) {
   else createReadStream(path).pipe(response);
 }
 
+async function capturedPlaylist() {
+  const [videoInit, audioInit] = await Promise.all([
+    readFile(join(localDashRoot, "init-stream0.m4s")),
+    readFile(join(localDashRoot, "init-stream1.m4s")),
+  ]);
+  return {
+    base_url: "/captured/",
+    video: [
+      {
+        base_url: "video/",
+        init_segment: videoInit.toString("base64"),
+        segments: [
+          { url: "chunk-stream0-00001.m4s" },
+          { url: "chunk-stream0-00002.m4s" },
+        ],
+      },
+    ],
+    audio: [
+      {
+        base_url: "audio/",
+        init_segment: audioInit.toString("base64"),
+        segments: [
+          { url: "chunk-stream1-00001.m4s" },
+          { url: "chunk-stream1-00002.m4s" },
+          { url: "chunk-stream1-00003.m4s" },
+        ],
+      },
+    ],
+  };
+}
+
+function sendJson(response, value) {
+  const content = JSON.stringify(value);
+  response.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Content-Length": Buffer.byteLength(content),
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(content);
+}
+
 function notFound(response) {
   response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
   response.end("Not found");
@@ -144,6 +185,10 @@ function mainHandler(request, response) {
     const manifestPath = safeManifestPath(url.pathname);
     if (manifestPath) {
       await sendFile(request, response, manifestPath);
+      return;
+    }
+    if (url.pathname === "/captured/playlist.json") {
+      sendJson(response, await capturedPlaylist());
       return;
     }
     const capturedPart = capturedStreamPart(url.pathname);

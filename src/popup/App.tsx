@@ -12,6 +12,10 @@ import {
   type AssemblyProgress,
   assembleCapturedMp4,
 } from "../core/assemble-captured-mp4";
+import {
+  capturedMp4TrackKind,
+  isCapturedMp4PlaylistMetadata,
+} from "../core/captured-mp4-metadata";
 import type { VideoCandidate } from "../core/video-candidate";
 import {
   type DownloadResult,
@@ -357,12 +361,16 @@ export function App({
     capturedVideos: CapturedVideo[],
     pageTitle: string,
   ) {
-    const mp4Parts = capturedVideos.filter((video) => {
-      const mimeType = video.mimeType.split(";", 1)[0]?.trim().toLowerCase();
-      return mimeType === "video/mp4" || mimeType === "audio/mp4";
-    });
-    const videoCount = mp4Parts.filter((part) =>
-      part.mimeType.toLowerCase().startsWith("video/mp4"),
+    const assemblyInputs = capturedVideos.filter(
+      (video) =>
+        capturedMp4TrackKind(video) !== null ||
+        isCapturedMp4PlaylistMetadata(video),
+    );
+    const mp4Parts = assemblyInputs.filter(
+      (video) => capturedMp4TrackKind(video) !== null,
+    );
+    const videoCount = mp4Parts.filter(
+      (part) => capturedMp4TrackKind(part) === "video",
     ).length;
     const audioCount = mp4Parts.length - videoCount;
     const hasFragmentEvidence =
@@ -393,7 +401,7 @@ export function App({
           type="button"
           className="primary-button"
           disabled={assemblyInProgress || assemblyState === "accepted"}
-          onClick={() => void handleAssembly(mp4Parts, pageTitle)}
+          onClick={() => void handleAssembly(assemblyInputs, pageTitle)}
         >
           {buttonText}
         </button>

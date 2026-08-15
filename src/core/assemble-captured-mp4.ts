@@ -7,6 +7,11 @@ import {
   Mp4OutputFormat,
   Output,
 } from "mediabunny";
+import {
+  capturedMp4TrackKind,
+  embeddedMp4Initializations,
+  isCapturedMp4PlaylistMetadata,
+} from "./captured-mp4-metadata";
 
 const MAX_REQUESTS = 2_000;
 const MAX_PART_BYTES = 64 * 1024 * 1024;
@@ -38,17 +43,6 @@ interface FetchedPart {
   hasInitialization: boolean;
   hasMediaFragment: boolean;
   request: CapturedMediaRequest;
-}
-
-function normalizedMimeType(value: string): string {
-  return value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-}
-
-function trackKind(request: CapturedMediaRequest): TrackKind | null {
-  const mimeType = normalizedMimeType(request.mimeType);
-  if (mimeType === "video/mp4") return "video";
-  if (mimeType === "audio/mp4") return "audio";
-  return null;
 }
 
 function requestKey(request: CapturedMediaRequest): string {
@@ -148,9 +142,16 @@ async function fetchParts(
     ...new Map(
       requests.map((request) => [requestKey(request), request]),
     ).values(),
-  ].filter((request) => trackKind(request) !== null);
+  ].filter(
+    (request) =>
+      capturedMp4TrackKind(request) !== null ||
+      isCapturedMp4PlaylistMetadata(request),
+  );
+  const mediaRequests = uniqueRequests.filter(
+    (request) => capturedMp4TrackKind(request) !== null,
+  );
 
-  if (uniqueRequests.length === 0) {
+  if (mediaRequests.length === 0) {
     throw new Error("No MP4 stream parts were captured.");
   }
   if (uniqueRequests.length > MAX_REQUESTS) {
@@ -162,12 +163,13 @@ async function fetchParts(
     ["video", []],
   ]);
   const fetchPart = options.fetchPart ?? defaultFetchPart;
+  const metadata: Array<{
+    bytes: ArrayBuffer;
+    request: CapturedMediaRequest;
+  }> = [];
   let totalBytes = 0;
 
   for (const [index, request] of uniqueRequests.entries()) {
-    const kind = trackKind(request);
-    if (!kind) continue;
-
     const bytes = await fetchPart(request);
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_PART_BYTES) {
       throw new Error("A captured stream part has an invalid size.");
@@ -179,19 +181,44 @@ async function fetchParts(
       );
     }
 
-    const types = topLevelBoxTypes(bytes);
-    byKind.get(kind)?.push({
-      bytes,
-      decodeTime: decodeTime(bytes),
-      hasInitialization: types.has("ftyp") && types.has("moov"),
-      hasMediaFragment: types.has("moof"),
-      request,
-    });
+    const kind = capturedMp4TrackKind(request);
+    if (kind) {
+      const types = topLevelBoxTypes(bytes);
+      byKind.get(kind)?.push({
+        bytes,
+        decodeTime: decodeTime(bytes),
+        hasInitialization: types.has("ftyp") && types.has("moov"),
+        hasMediaFragment: types.has("moof"),
+        request,
+      });
+    } else {
+      metadata.push({ bytes, request });
+    }
     options.onProgress?.({
       phase: "fetching",
       completed: index + 1,
       total: uniqueRequests.length,
     });
+  }
+
+  for (const item of metadata) {
+    for (const initialization of embeddedMp4Initializations(
+      item.bytes,
+      item.request.url,
+      mediaRequests,
+    )) {
+      const parts = byKind.get(initialization.kind) as FetchedPart[];
+      if (parts.some((part) => part.hasInitialization)) continue;
+      const types = topLevelBoxTypes(initialization.bytes);
+      if (!types.has("ftyp") || !types.has("moov")) continue;
+      parts.push({
+        bytes: initialization.bytes,
+        decodeTime: null,
+        hasInitialization: true,
+        hasMediaFragment: false,
+        request: item.request,
+      });
+    }
   }
 
   return byKind;

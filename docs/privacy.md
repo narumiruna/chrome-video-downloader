@@ -2,13 +2,13 @@
 
 Last updated: August 15, 2026.
 
-Chrome Video Downloader processes page titles, page URLs, video source URLs, media request URLs, HTTP byte ranges, media types, dimensions, and durations locally on the user's device.
+Chrome Video Downloader processes page titles, page URLs, video source URLs, media request URLs, bounded playback metadata, HTTP byte ranges, media types, dimensions, and durations locally on the user's device.
 
 The background service worker observes media-like requests so the extension can discover video and audio fragments loaded by cross-origin players.
 
 Captured request metadata is grouped by tab, kept only in memory, capped, and removed after five minutes of inactivity or when the tab closes.
 
-When the user selects **Assemble MP4**, the extension requests the captured media URLs from their original hosts and remuxes compatible unencrypted MP4 audio and video fragments in the popup.
+When the user selects **Assemble MP4**, the extension requests captured media and supported playlist-metadata URLs from their original hosts, matches embedded initialization data to exact captured segment URLs, and remuxes compatible unencrypted MP4 audio and video fragments in the popup.
 
 The extension does not transmit page data, media URLs, media content, download history, or usage data to the developer or any developer-controlled service.
 

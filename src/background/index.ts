@@ -1,3 +1,5 @@
+import { isCapturedMp4PlaylistMetadata } from "../core/captured-mp4-metadata";
+
 const VIDEO_MIME_PATTERNS = new Set([
   "audio/mp4",
   "video/mp4",
@@ -77,6 +79,8 @@ function isKnownVideoHost(hostname: string): boolean {
 function isVideoUrl(url: string, contentType: string): boolean {
   const normalizedType =
     contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (isCapturedMp4PlaylistMetadata({ mimeType: contentType, url }))
+    return true;
   if (VIDEO_MIME_PATTERNS.has(normalizedType)) return true;
   if (VIDEO_EXTENSIONS.has(videoExtensionFromUrl(url))) return true;
 

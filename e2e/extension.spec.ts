@@ -239,8 +239,8 @@ test.describe
       await expect(
         popup.getByRole("heading", { name: "Captured video stream" }),
       ).toBeVisible();
-      await expect(popup.getByText("video/mp4 × 3")).toBeVisible();
-      await expect(popup.getByText("audio/mp4 × 4")).toBeVisible();
+      await expect(popup.getByText("video/mp4 × 2")).toBeVisible();
+      await expect(popup.getByText("audio/mp4 × 3")).toBeVisible();
 
       const previous = await latestDownload(popup);
       await popup.getByRole("button", { name: "Assemble MP4" }).click();

@@ -99,13 +99,18 @@ describe("App", () => {
   test("assembles captured audio and video parts into one MP4 download", async () => {
     const capturedVideos = [
       {
-        mimeType: "video/mp4",
+        mimeType: "application/json",
         timestamp: 1,
+        url: "https://media.example/playlist.json?secret=metadata",
+      },
+      {
+        mimeType: "video/mp4",
+        timestamp: 2,
         url: "https://media.example/video-part.m4s?secret=video",
       },
       {
         mimeType: "audio/mp4",
-        timestamp: 2,
+        timestamp: 3,
         url: "https://media.example/audio-part.m4s?secret=audio",
       },
     ];
@@ -135,7 +140,9 @@ describe("App", () => {
     ).toBeVisible();
     expect(screen.getByText("video/mp4 × 1")).toBeVisible();
     expect(screen.getByText("audio/mp4 × 1")).toBeVisible();
-    expect(screen.queryByText(/secret=video|secret=audio/)).toBeNull();
+    expect(
+      screen.queryByText(/secret=metadata|secret=video|secret=audio/),
+    ).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Assemble MP4" }));
 
