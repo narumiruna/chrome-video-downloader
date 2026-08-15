@@ -15,9 +15,16 @@ export interface RawCollection {
 
 export function collectVideoCandidates(): RawCollection {
   const maxCandidates = 50;
+  const maxMediaTypeLength = 256;
+  const maxPageTitleLength = 200;
+  const maxPageUrlLength = 4_096;
   const mediaResourcePattern = /\.(?:m4v|mov|mp4|mpd|m3u8|ogv|webm)(?:$|[?#])/i;
   const candidates: RawCollectedCandidate[] = [];
   const candidateIndexes = new Map<string, number>();
+
+  function cap(value: string, maxLength: number): string {
+    return value.slice(0, maxLength);
+  }
 
   function add(candidate: RawCollectedCandidate): void {
     if (
@@ -52,7 +59,7 @@ export function collectVideoCandidates(): RawCollection {
         ? { duration: video.duration }
         : {}),
     };
-    const mediaType = video.getAttribute("type") ?? "";
+    const mediaType = cap(video.getAttribute("type") ?? "", maxMediaTypeLength);
 
     if (video.currentSrc) {
       add({
@@ -81,7 +88,9 @@ export function collectVideoCandidates(): RawCollection {
         ...metadata,
         url: sourceUrl,
         sourceKind: "source-element",
-        ...(source.type ? { mediaType: source.type } : {}),
+        ...(source.type
+          ? { mediaType: cap(source.type, maxMediaTypeLength) }
+          : {}),
       });
     }
     if (video.srcObject) {
@@ -113,7 +122,7 @@ export function collectVideoCandidates(): RawCollection {
 
   return {
     candidates,
-    pageTitle: document.title,
-    pageUrl: window.location.href,
+    pageTitle: cap(document.title, maxPageTitleLength),
+    pageUrl: cap(window.location.href, maxPageUrlLength),
   };
 }

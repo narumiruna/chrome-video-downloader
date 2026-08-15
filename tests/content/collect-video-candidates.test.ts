@@ -3,6 +3,8 @@ import { collectVideoCandidates } from "../../src/content/collect-video-candidat
 
 afterEach(() => {
   document.body.replaceChildren();
+  document.title = "";
+  window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
 });
 
@@ -120,6 +122,25 @@ describe("collectVideoCandidates", () => {
 
     expect(matches).toHaveLength(1);
     expect(matches[0]?.mediaType).toBe("application/vnd.apple.mpegurl");
+  });
+
+  test("caps page-controlled strings before crossing the extension boundary", () => {
+    const title = `Title-${"t".repeat(1_000)}`;
+    const mediaType = `video/${"m".repeat(1_000)}`;
+    document.title = title;
+    window.history.replaceState(null, "", `/?media=${"u".repeat(5_000)}`);
+    document.body.innerHTML = `<video id="video" type="${mediaType}"></video>`;
+    const video = document.querySelector<HTMLVideoElement>("#video");
+    if (!video) throw new Error("missing fixture video");
+    Object.defineProperty(video, "currentSrc", {
+      value: "https://cdn.example.com/video.mp4",
+    });
+
+    const result = collectVideoCandidates();
+
+    expect(result.pageTitle).toBe(title.slice(0, 200));
+    expect(result.pageUrl).toHaveLength(4_096);
+    expect(result.candidates[0]?.mediaType).toBe(mediaType.slice(0, 256));
   });
 
   test("drops overlong page-controlled URLs before crossing the extension boundary", () => {
