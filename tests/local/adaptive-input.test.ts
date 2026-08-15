@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -10,7 +10,9 @@ import {
 const cleanupPaths: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
-  const path = await mkdtemp(join(tmpdir(), "adaptive-input-test-"));
+  const path = await realpath(
+    await mkdtemp(join(tmpdir(), "adaptive-input-test-")),
+  );
   cleanupPaths.push(path);
   return path;
 }
