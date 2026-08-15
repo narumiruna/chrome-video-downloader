@@ -463,6 +463,17 @@ describe("validateLocalDashManifest", () => {
       code: "remote-input",
     },
     {
+      name: "XLink namespace alias",
+      mutate: (xml: string) =>
+        xml
+          .replace(
+            'xmlns="urn:mpeg:dash:schema:mpd:2011"',
+            'xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:remote="http://www.w3.org/1999/xlink"',
+          )
+          .replace("<Period>", '<Period remote:href="remote.mpd">'),
+      code: "remote-input",
+    },
+    {
       name: "negative repeat",
       mutate: (xml: string) => xml.replace('r="1"', 'r="-1"'),
       code: "invalid-input",

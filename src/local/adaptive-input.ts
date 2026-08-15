@@ -471,12 +471,6 @@ export async function validateLocalDashManifest(
       "DASH DTD and entity declarations are not supported.",
     );
   }
-  if (/\bxlink:href\s*=/i.test(manifest.content)) {
-    throw new SegmentMergeError(
-      "remote-input",
-      "DASH XLink references are not supported.",
-    );
-  }
   let validation: unknown;
   try {
     validation = XMLValidator.validate(manifest.content);
@@ -526,7 +520,7 @@ export async function validateLocalDashManifest(
       "DASH ContentProtection is not supported.",
     );
   }
-  if (containsKey(mpd, new Set(["Location", "UTCTiming"]))) {
+  if (containsKey(mpd, new Set(["@_href", "Location", "UTCTiming"]))) {
     throw new SegmentMergeError(
       "remote-input",
       "External DASH references are not supported.",
