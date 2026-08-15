@@ -14,8 +14,8 @@ html,
 body,
 #root {
   margin: 0;
-  min-width: min(25rem, 100vw);
-  width: min(25rem, 100vw);
+  min-width: 25rem;
+  width: 25rem;
 }
 
 body {
