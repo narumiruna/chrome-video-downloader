@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 const fixtureRoot = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const mediaRoot = join(fixtureRoot, "media");
 const manifestRoot = join(fixtureRoot, "manifests");
+const localDashRoot = fileURLToPath(
+  new URL("../tests/fixtures/local-streams/dash/", import.meta.url),
+);
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -20,6 +23,7 @@ const contentTypes = new Map([
 
 const pages = new Set([
   "blob.html",
+  "captured-stream.html",
   "direct.html",
   "dynamic.html",
   "empty.html",
@@ -34,6 +38,16 @@ const pages = new Set([
 function safeManifestPath(pathname) {
   const match = /^\/manifests\/(hls|dash)\/([a-zA-Z0-9.-]+)$/.exec(pathname);
   return match ? join(manifestRoot, match[1], match[2]) : null;
+}
+
+function capturedStreamPart(pathname) {
+  const match = /^\/captured\/(video|audio)\/([a-zA-Z0-9.-]+)$/.exec(pathname);
+  return match
+    ? {
+        contentType: `${match[1]}/mp4`,
+        path: join(localDashRoot, match[2]),
+      }
+    : null;
 }
 
 async function sendFile(request, response, path, options = {}) {
@@ -79,6 +93,47 @@ async function sendFile(request, response, path, options = {}) {
   response.writeHead(200, { ...headers, "Content-Length": file.size });
   if (request.method === "HEAD") response.end();
   else createReadStream(path).pipe(response);
+}
+
+async function capturedPlaylist() {
+  const [videoInit, audioInit] = await Promise.all([
+    readFile(join(localDashRoot, "init-stream0.m4s")),
+    readFile(join(localDashRoot, "init-stream1.m4s")),
+  ]);
+  return {
+    base_url: "/captured/",
+    video: [
+      {
+        base_url: "video/",
+        init_segment: videoInit.toString("base64"),
+        segments: [
+          { url: "chunk-stream0-00001.m4s" },
+          { url: "chunk-stream0-00002.m4s" },
+        ],
+      },
+    ],
+    audio: [
+      {
+        base_url: "audio/",
+        init_segment: audioInit.toString("base64"),
+        segments: [
+          { url: "chunk-stream1-00001.m4s" },
+          { url: "chunk-stream1-00002.m4s" },
+          { url: "chunk-stream1-00003.m4s" },
+        ],
+      },
+    ],
+  };
+}
+
+function sendJson(response, value) {
+  const content = JSON.stringify(value);
+  response.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Content-Length": Buffer.byteLength(content),
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(content);
 }
 
 function notFound(response) {
@@ -130,6 +185,17 @@ function mainHandler(request, response) {
     const manifestPath = safeManifestPath(url.pathname);
     if (manifestPath) {
       await sendFile(request, response, manifestPath);
+      return;
+    }
+    if (url.pathname === "/captured/playlist.json") {
+      sendJson(response, await capturedPlaylist());
+      return;
+    }
+    const capturedPart = capturedStreamPart(url.pathname);
+    if (capturedPart) {
+      await sendFile(request, response, capturedPart.path, {
+        contentType: capturedPart.contentType,
+      });
       return;
     }
     notFound(response);

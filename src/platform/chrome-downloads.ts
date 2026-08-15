@@ -3,7 +3,7 @@ import type { VideoCandidate } from "../core/video-candidate";
 const MAX_URL_LENGTH = 8_192;
 
 export interface ChromeDownloadsApi {
-  download(options: { url: string }): Promise<number>;
+  download(options: { url: string; filename?: string }): Promise<number>;
 }
 
 export type DownloadResult =
@@ -35,6 +35,28 @@ function isSafeDownloadCandidate(candidate: VideoCandidate): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+export async function startBlobDownload(
+  blob: Blob,
+  filename: string,
+  api: ChromeDownloadsApi = defaultChromeApi(),
+): Promise<DownloadResult> {
+  if (blob.size === 0 || blob.type !== "video/mp4" || filename.length === 0) {
+    return { code: "invalid-candidate", status: "error" };
+  }
+
+  const url = URL.createObjectURL(blob);
+  try {
+    const downloadId = await api.download({ filename, url });
+    return Number.isInteger(downloadId) && downloadId >= 0
+      ? { downloadId, status: "accepted" }
+      : { code: "download-failed", status: "error" };
+  } catch {
+    return { code: "download-failed", status: "error" };
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 }
 

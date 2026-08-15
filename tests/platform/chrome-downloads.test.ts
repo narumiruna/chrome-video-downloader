@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { VideoCandidate } from "../../src/core/video-candidate";
 import {
   type ChromeDownloadsApi,
+  startBlobDownload,
   startVideoDownload,
 } from "../../src/platform/chrome-downloads";
 
@@ -25,6 +26,53 @@ function downloadsApi(result: number | Error = 42): ChromeDownloadsApi {
 }
 
 describe("startVideoDownload", () => {
+  test("hands an assembled MP4 Blob to Chrome with a safe filename", async () => {
+    const api = downloadsApi();
+    const createDescriptor = Object.getOwnPropertyDescriptor(
+      URL,
+      "createObjectURL",
+    );
+    const revokeDescriptor = Object.getOwnPropertyDescriptor(
+      URL,
+      "revokeObjectURL",
+    );
+    const createObjectURL = vi.fn(() => "blob:assembled-video");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperties(URL, {
+      createObjectURL: { configurable: true, value: createObjectURL },
+      revokeObjectURL: { configurable: true, value: revokeObjectURL },
+    });
+    vi.useFakeTimers();
+
+    try {
+      const result = await startBlobDownload(
+        new Blob(["video"], { type: "video/mp4" }),
+        "lesson.mp4",
+        api,
+      );
+
+      expect(api.download).toHaveBeenCalledWith({
+        filename: "lesson.mp4",
+        url: "blob:assembled-video",
+      });
+      expect(result).toEqual({ downloadId: 42, status: "accepted" });
+      vi.runAllTimers();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:assembled-video");
+    } finally {
+      vi.useRealTimers();
+      if (createDescriptor) {
+        Object.defineProperty(URL, "createObjectURL", createDescriptor);
+      } else {
+        Reflect.deleteProperty(URL, "createObjectURL");
+      }
+      if (revokeDescriptor) {
+        Object.defineProperty(URL, "revokeObjectURL", revokeDescriptor);
+      } else {
+        Reflect.deleteProperty(URL, "revokeObjectURL");
+      }
+    }
+  });
+
   test("hands a validated URL to Chrome without overriding browser choices", async () => {
     const api = downloadsApi();
 

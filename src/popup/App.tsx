@@ -8,9 +8,18 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type AssemblyProgress,
+  assembleCapturedMp4,
+} from "../core/assemble-captured-mp4";
+import {
+  capturedMp4TrackKind,
+  isCapturedMp4PlaylistMetadata,
+} from "../core/captured-mp4-metadata";
 import type { VideoCandidate } from "../core/video-candidate";
 import {
   type DownloadResult,
+  startBlobDownload,
   startVideoDownload,
 } from "../platform/chrome-downloads";
 import { type ScanPageResult, scanActivePage } from "../platform/chrome-tabs";
@@ -20,6 +29,7 @@ import {
   type SupportedLocale,
   unsupportedReason,
 } from "./messages";
+import type { CapturedVideo } from "./state";
 import { initialState, popupReducer } from "./state";
 import "./styles.css";
 
@@ -27,7 +37,12 @@ export interface AppProps {
   locale?: SupportedLocale;
   scanPage?: () => Promise<ScanPageResult>;
   downloadVideo?: (candidate: VideoCandidate) => Promise<DownloadResult>;
+  getCapturedVideos?: () => Promise<CapturedVideo[]>;
+  assembleVideo?: typeof assembleCapturedMp4;
+  downloadAssembledVideo?: typeof startBlobDownload;
 }
+
+type AssemblyState = "idle" | "fetching" | "muxing" | "accepted" | "error";
 
 function formatDuration(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -39,6 +54,16 @@ function formatDuration(seconds: number): string {
         .toString()
         .padStart(2, "0")}`
     : `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function assembledFilename(pageTitle: string): string {
+  const safeTitle = Array.from(pageTitle, (character) =>
+    (character.codePointAt(0) ?? 0) < 32 || '<>:"/\\|?*'.includes(character)
+      ? " "
+      : character,
+  ).join("");
+  const basename = safeTitle.replace(/\s+/g, " ").trim().slice(0, 120);
+  return `${basename || "video"}.mp4`;
 }
 
 function candidateMetadata(candidate: VideoCandidate): string[] {
@@ -53,6 +78,9 @@ export function App({
   locale: requestedLocale,
   scanPage = scanActivePage,
   downloadVideo = startVideoDownload,
+  getCapturedVideos,
+  assembleVideo = assembleCapturedMp4,
+  downloadAssembledVideo = startBlobDownload,
 }: AppProps) {
   const locale = useMemo(
     () => resolveLocale(requestedLocale),
@@ -61,6 +89,7 @@ export function App({
   const copy = useMemo(() => getMessages(locale), [locale]);
   const [state, dispatch] = useReducer(popupReducer, initialState);
   const [announcement, setAnnouncement] = useState(copy.scanning);
+  const [assemblyState, setAssemblyState] = useState<AssemblyState>("idle");
   const mountedRef = useRef(false);
   const scanVersionRef = useRef(0);
   const pendingDownloadsRef = useRef(new Set<string>());
@@ -69,15 +98,28 @@ export function App({
     const version = scanVersionRef.current + 1;
     scanVersionRef.current = version;
     dispatch({ type: "scan-started" });
+    setAssemblyState("idle");
     setAnnouncement(copy.scanning);
     try {
       const result = await scanPage();
       if (!mountedRef.current || scanVersionRef.current !== version) return;
       setAnnouncement("");
       if (result.status === "success") {
+        let capturedVideos: CapturedVideo[] = result.capturedVideos;
+
+        if (getCapturedVideos) {
+          try {
+            capturedVideos = await getCapturedVideos();
+          } catch {
+            // Keep the videos returned by the page scan.
+          }
+        }
+
         dispatch({
           type: "scan-succeeded",
           candidates: result.candidates,
+          capturedVideos,
+          iframeUrls: result.iframeUrls,
           pageTitle: result.pageTitle,
           pageUrl: result.pageUrl,
         });
@@ -91,7 +133,7 @@ export function App({
       setAnnouncement("");
       dispatch({ type: "scan-failed" });
     }
-  }, [copy.scanning, scanPage]);
+  }, [copy.scanning, scanPage, getCapturedVideos]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -136,15 +178,68 @@ export function App({
     [copy.downloadError, copy.sentStatus, downloadVideo],
   );
 
+  const handleAssembly = useCallback(
+    async (capturedVideos: CapturedVideo[], pageTitle: string) => {
+      if (assemblyState === "fetching" || assemblyState === "muxing") return;
+
+      setAssemblyState("fetching");
+      setAnnouncement(copy.fetchingParts);
+      try {
+        const blob = await assembleVideo(capturedVideos, {
+          onProgress: (progress: AssemblyProgress) => {
+            if (!mountedRef.current) return;
+            const nextState =
+              progress.phase === "muxing" ? "muxing" : "fetching";
+            setAssemblyState(nextState);
+            setAnnouncement(
+              progress.phase === "muxing" ? copy.muxing : copy.fetchingParts,
+            );
+          },
+        });
+        const result = await downloadAssembledVideo(
+          blob,
+          assembledFilename(pageTitle),
+        );
+        if (!mountedRef.current) return;
+        if (result.status === "accepted") {
+          setAssemblyState("accepted");
+          setAnnouncement(copy.sentStatus);
+        } else {
+          setAssemblyState("error");
+          setAnnouncement(copy.assemblyError);
+        }
+      } catch {
+        if (!mountedRef.current) return;
+        setAssemblyState("error");
+        setAnnouncement(copy.assemblyError);
+      }
+    },
+    [
+      assembleVideo,
+      assemblyState,
+      copy.assemblyError,
+      copy.fetchingParts,
+      copy.muxing,
+      copy.sentStatus,
+      downloadAssembledVideo,
+    ],
+  );
+
   const anyDownloadStarting = Object.values(state.downloads).includes(
     "starting",
   );
+  const assemblyInProgress =
+    assemblyState === "fetching" || assemblyState === "muxing";
 
   function scanButton() {
     return (
       <button
         className="secondary-button"
-        disabled={state.scan.status === "scanning" || anyDownloadStarting}
+        disabled={
+          state.scan.status === "scanning" ||
+          anyDownloadStarting ||
+          assemblyInProgress
+        }
         onClick={() => void runScan()}
         type="button"
       >
@@ -216,6 +311,107 @@ export function App({
     );
   }
 
+  function iframeInfoSection(iframeUrls: string[]) {
+    if (iframeUrls.length === 0) return null;
+
+    // Filter to show only video-related iframes
+    const videoIframes = iframeUrls.filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return (
+          parsed.hostname.includes("vimeo") ||
+          parsed.hostname.includes("youtube") ||
+          parsed.pathname.includes("video") ||
+          parsed.pathname.includes("embed")
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    if (videoIframes.length === 0) return null;
+
+    return (
+      <div className="iframe-info-section">
+        <h3>Detected video iframes</h3>
+        <ul className="iframe-list">
+          {videoIframes.map((url) => (
+            <li key={url} className="iframe-item">
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="iframe-link"
+              >
+                {url.length > 80 ? `${url.substring(0, 80)}...` : url}
+              </a>
+              <span className="iframe-tag">video</span>
+            </li>
+          ))}
+        </ul>
+        <p className="iframe-hint">
+          Click to open the video page. The extension can capture video URLs
+          from this iframe.
+        </p>
+      </div>
+    );
+  }
+
+  function capturedVideoSection(
+    capturedVideos: CapturedVideo[],
+    pageTitle: string,
+  ) {
+    const assemblyInputs = capturedVideos.filter(
+      (video) =>
+        capturedMp4TrackKind(video) !== null ||
+        isCapturedMp4PlaylistMetadata(video),
+    );
+    const mp4Parts = assemblyInputs.filter(
+      (video) => capturedMp4TrackKind(video) !== null,
+    );
+    const videoCount = mp4Parts.filter(
+      (part) => capturedMp4TrackKind(part) === "video",
+    ).length;
+    const audioCount = mp4Parts.length - videoCount;
+    const hasFragmentEvidence =
+      audioCount > 0 ||
+      mp4Parts.some((part) => /\.m4s(?:$|[?#])/i.test(part.url));
+    if (videoCount === 0 || !hasFragmentEvidence) return null;
+
+    const buttonText =
+      assemblyState === "fetching"
+        ? copy.fetchingParts
+        : assemblyState === "muxing"
+          ? copy.muxing
+          : assemblyState === "accepted"
+            ? copy.sentButton
+            : assemblyState === "error"
+              ? copy.retry
+              : copy.assemble;
+
+    return (
+      <div className="captured-video-section">
+        <h3>{copy.capturedStreamTitle}</h3>
+        <p className="captured-video-hint">{copy.capturedStreamHint}</p>
+        <p className="metadata captured-part-counts">
+          <span>video/mp4 × {videoCount}</span>
+          {audioCount > 0 ? <span>audio/mp4 × {audioCount}</span> : null}
+        </p>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={assemblyInProgress || assemblyState === "accepted"}
+          onClick={() => void handleAssembly(assemblyInputs, pageTitle)}
+        >
+          {buttonText}
+        </button>
+        {assemblyState === "error" ? (
+          <p className="unsupported-reason">{copy.assemblyError}</p>
+        ) : null}
+      </div>
+    );
+  }
+
   function content() {
     switch (state.scan.status) {
       case "scanning":
@@ -235,6 +431,11 @@ export function App({
               </div>
               {scanButton()}
             </div>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {candidateList(state.scan.candidates)}
           </>
         );
@@ -242,6 +443,11 @@ export function App({
         return (
           <section className="state-panel">
             <h1>{copy.unsupportedTitle}</h1>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {candidateList(state.scan.candidates)}
             {scanButton()}
           </section>
@@ -252,6 +458,11 @@ export function App({
           <section className="state-panel">
             <h1>{copy.emptyTitle}</h1>
             <p>{copy.emptyMessage}</p>
+            {iframeInfoSection(state.scan.iframeUrls)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {scanButton()}
           </section>
         );

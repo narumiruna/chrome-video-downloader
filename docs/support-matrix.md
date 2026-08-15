@@ -2,15 +2,13 @@
 
 ## Scope contract
 
-The product scans only the top-level document of the active tab after a user invokes the extension.
+The product scans the active top-level page and transiently captures media requests associated with each tab.
 
-It enables downloads only for validated direct HTTP(S) video candidates.
+It downloads validated direct HTTP(S) videos and can remux captured compatible unencrypted fragmented MP4 video and audio into one MP4.
 
-It does not bypass authentication, anti-hotlinking, paywalls, DRM, or website controls.
+It does not bypass authentication, anti-hotlinking, paywalls, DRM, encryption, or website controls.
 
-The execution request for `docs/plans/archived/2026-08-15_chrome-video-downloader-plan.md` approves this MVP wording and scope.
-
-The separate local CLI can remux bounded authorized adaptive-stream files already on disk, but it does not change extension behavior or acquire media from websites.
+The separate local CLI continues to support bounded authorized adaptive-stream files already on disk.
 
 ## Verified environment
 
@@ -23,9 +21,9 @@ The separate local CLI can remux bounded authorized adaptive-stream files alread
 | npm | 12.0.2 |
 | Automated browser | Chrome for Testing 151.0.7922.34 through Playwright Chromium channel |
 | Installed system Chrome | 148.0.7778.167 |
-| Manifest/API floor | Chrome 96 |
+| Manifest/API floor | Chrome 102 |
 
-Chrome 96 is the declared API floor because this project uses Promise-returning `chrome.downloads.download()` and Manifest V3 scripting APIs available by that release.
+Chrome 102 is the declared API floor because captured request metadata uses `chrome.storage.session` to survive Manifest V3 service-worker suspension without persistent disk storage.
 
 Automated extension loading uses Chrome for Testing because branded Chrome 137 and newer reject the command-line flags used by extension test automation.
 
@@ -42,11 +40,13 @@ A manual load-unpacked pass in branded Chrome remains a release-operator check b
 | Existing hostname Cookie | Best effort | The controlled Cookie-protected fixture downloads byte-for-byte after `fixture_auth=allowed` is set. |
 | Referer, custom header, expiring token, or anti-hotlink requirement | Unverified | Chrome owns the network request, and this extension does not add bypass headers or retry around site controls. |
 | Blob/MSE source | Unsupported | The popup explains that page-managed blob videos are unsupported and creates no download. |
-| HLS `.m3u8` | Unsupported | The popup identifies HLS and creates no download. |
-| MPEG-DASH `.mpd` | Unsupported | The popup identifies DASH and creates no download. |
-| Individual `.ts`, `.m4s`, or `.aac` segment | Ignored | Unit and browser fixtures prove segments are not presented as complete videos. |
+| HLS `.m3u8` | Unsupported | The popup identifies HLS manifests but does not parse or assemble them. |
+| MPEG-DASH `.mpd` | Unsupported as a manifest | The popup does not parse MPDs or select DASH representations. |
+| Captured fragmented MP4 video plus audio | Best effort | The browser uses captured initialization responses or bounded embedded initialization metadata matched to exact captured segment URLs, orders media by `tfdt`, and remuxes compatible tracks locally with Mediabunny. |
+| Missing, expired, encrypted, mixed-representation, or non-MP4 fragment set | Unsupported | Assembly fails without publishing a partial output and asks the user to replay from the beginning. |
+| Individual `.ts`, `.m4s`, or `.aac` segment | Never presented as a complete video | Captured MP4 parts are grouped behind one assembly action, while TS and AAC parts remain unsupported. |
 | Top-level page with no video | Supported empty state | The popup recommends playing the video and scanning again. |
-| Cross-origin iframe video | Unsupported | The collector targets only the top frame, and the iframe fixture returns an empty state. |
+| Cross-origin iframe fragmented MP4 | Best effort | The background worker can observe authorized media requests when host access applies, without reading the iframe DOM. |
 | `chrome://`, `edge://`, `devtools://`, `view-source:`, `file:` | Restricted | Unit coverage proves these schemes do not reach script injection. |
 | Chrome Web Store pages | Restricted | Both current and legacy Web Store URLs are blocked before injection. |
 | DRM/EME, paywall, CAPTCHA, or access-control bypass | Prohibited | No implementation, permission, or product claim supports these paths. |
@@ -54,7 +54,7 @@ A manual load-unpacked pass in branded Chrome remains a release-operator check b
 | Bounded static local DASH | Supported by local CLI only | Native integration verifies one selected H.264 representation plus one AAC representation in a 2.005-second MP4. |
 | Authorized local fragmented MP4 track manifest | Supported by local CLI only | Native integration assembles ordered init/media fragments and verifies H.264 plus AAC in a 2.005-second MP4. |
 | Authorized local fragmented WebM track manifest | Supported by local CLI only | Native integration assembles ordered init/media fragments and verifies VP9 plus Opus in a 2.008-second WebM. |
-| Adaptive-stream website acquisition or browser MSE capture | Prohibited | The local CLI accepts only validated files already on disk and the extension continues to show adaptive streams as unsupported. |
+| General adaptive-stream acquisition or browser MSE buffer capture | Unsupported | The extension only remuxes observed unencrypted MP4 HTTP responses and does not inspect MSE buffers, parse general manifests, decrypt, or repair streams. |
 
 ## Fixture ownership and regeneration
 

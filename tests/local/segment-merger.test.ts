@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   stat,
   symlink,
   writeFile,
@@ -22,7 +23,9 @@ import {
 const cleanupPaths: string[] = [];
 
 async function temporaryDirectory() {
-  const path = await mkdtemp(join(tmpdir(), "segment-merger-test-"));
+  const path = await realpath(
+    await mkdtemp(join(tmpdir(), "segment-merger-test-")),
+  );
   cleanupPaths.push(path);
   return path;
 }

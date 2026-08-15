@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
@@ -10,6 +17,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { BlobSource, Input, MP4 } from "mediabunny";
 
 const fixtureOrigin = "http://127.0.0.1:4173";
 const productionExtensionPath = resolve("dist/chrome");
@@ -157,8 +165,8 @@ test.describe
     let downloadsPath: string;
 
     test.beforeAll(async () => {
-      temporaryRoot = await mkdtemp(
-        join(tmpdir(), "chrome-video-downloader-e2e-"),
+      temporaryRoot = await realpath(
+        await mkdtemp(join(tmpdir(), "chrome-video-downloader-e2e-")),
       );
       extensionPath = join(temporaryRoot, "extension");
       downloadsPath = join(temporaryRoot, "downloads");
@@ -217,6 +225,43 @@ test.describe
       await expect(popup.getByText("320×180").first()).toBeVisible();
       await downloadAndVerify("Download sample.mp4", expectedHashes.mp4);
       await downloadAndVerify("Download sample.webm", expectedHashes.webm);
+    });
+
+    test("assembles captured fragmented video and audio into one MP4", async () => {
+      await fixture.goto(`${fixtureOrigin}/captured-stream.html`);
+      await expect(fixture.locator("html")).toHaveAttribute(
+        "data-stream-loaded",
+        "true",
+      );
+      await fixture.bringToFront();
+      await popup.reload();
+
+      await expect(
+        popup.getByRole("heading", { name: "Captured video stream" }),
+      ).toBeVisible();
+      await expect(popup.getByText("video/mp4 × 2")).toBeVisible();
+      await expect(popup.getByText("audio/mp4 × 3")).toBeVisible();
+
+      const previous = await latestDownload(popup);
+      await popup.getByRole("button", { name: "Assemble MP4" }).click();
+      await expect
+        .poll(async () => {
+          const item = await latestDownload(popup);
+          return item?.id === previous?.id ? null : item;
+        })
+        .toMatchObject({ state: "complete" });
+
+      const item = await latestDownload(popup);
+      const bytes = await readFile(item?.filename ?? "");
+      const input = new Input({
+        formats: [MP4],
+        source: new BlobSource(new Blob([new Uint8Array(bytes)])),
+      });
+      expect(
+        (await input.getTracks()).map((track) => track.type).sort(),
+      ).toEqual(["audio", "video"]);
+      expect(await input.computeDuration()).toBeGreaterThan(2);
+      input.dispose();
     });
 
     test("keeps popup proportions stable across empty and found states", async () => {
@@ -333,7 +378,7 @@ test.describe
       });
     });
 
-    test("uses only a temporary test host grant in the E2E copy", async () => {
+    test("narrows host access in the E2E copy", async () => {
       const productionManifest = JSON.parse(
         await readFile(join(productionExtensionPath, "manifest.json"), "utf8"),
       ) as Record<string, unknown>;
@@ -341,7 +386,7 @@ test.describe
         await readFile(join(extensionPath, "manifest.json"), "utf8"),
       ) as Record<string, unknown>;
 
-      expect(productionManifest).not.toHaveProperty("host_permissions");
+      expect(productionManifest.host_permissions).toEqual(["<all_urls>"]);
       expect(testManifest.host_permissions).toEqual(["http://127.0.0.1/*"]);
       expect(basename(extensionPath)).toBe("extension");
     });

@@ -240,6 +240,98 @@ footer {
   line-height: 1.45;
 }
 
+/* Iframe info section */
+.iframe-info-section {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: #f0f4f8;
+  border-radius: 0.75rem;
+  border: 1px solid #d1d9e0;
+}
+
+.iframe-info-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #1a2330;
+}
+
+.iframe-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.iframe-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.iframe-item:last-child {
+  border-bottom: none;
+}
+
+.iframe-link {
+  flex: 1;
+  color: #1769d2;
+  text-decoration: none;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iframe-link:hover {
+  text-decoration: underline;
+}
+
+.iframe-tag {
+  font-size: 0.65rem;
+  padding: 0.12rem 0.35rem;
+  background: #d1ecf1;
+  color: #0c5460;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.iframe-hint {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Captured video section */
+.captured-video-section {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 0.75rem;
+  border: 1px solid #dee2e6;
+}
+
+.captured-video-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #1a2330;
+}
+
+.captured-video-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.captured-part-counts {
+  margin-bottom: 0.65rem;
+}
+
 .scrollbar {
   display: flex;
   width: 0.45rem;
@@ -268,9 +360,16 @@ footer {
   }
 
   .candidate-card,
+  .captured-video-section,
+  .iframe-info-section,
   .secondary-button {
     border-color: #354156;
     background: #1a2330;
+    color: #edf2f8;
+  }
+
+  .captured-video-section h3,
+  .iframe-info-section h3 {
     color: #edf2f8;
   }
 
@@ -278,6 +377,8 @@ footer {
   .hostname,
   .unsupported-reason,
   footer,
+  .captured-video-hint,
+  .iframe-hint,
   .state-panel > p {
     color: #aab7c9;
   }
