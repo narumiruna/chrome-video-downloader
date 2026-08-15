@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Dynamic video fixture</title></head>
+  <body>
+    <h1>Dynamic video fixture</h1>
+    <video id="video" controls preload="metadata"></video>
+    <script>
+      const video = document.querySelector("#video");
+      video.src = "/media/sample.mp4?token=fixture-secret";
+    </script>
+  </body>
+</html>

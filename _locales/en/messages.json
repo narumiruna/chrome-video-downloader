@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Video Downloader"
+  },
+  "extensionDescription": {
+    "message": "Find and download direct video files from the current page."
+  },
+  "actionTitle": {
+    "message": "Find direct videos"
+  }
+}
