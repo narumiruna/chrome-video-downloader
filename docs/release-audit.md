@@ -9,11 +9,12 @@ Audit date: August 15, 2026.
 - `npm run typecheck` passes TypeScript strict checking.
 - `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for a one-second local HLS fixture and two seconds of explicitly ordered local MPEG-TS input.
 - `npm run build:chrome` produces `dist/chrome` and `video-downloader-0.1.0.zip` with Extension.js 4.0.32.
-- `npm run test:e2e:built` passes seven Chromium extension tests against locally generated fixtures.
+- `npm run test:e2e:built` passes eight Chromium extension tests against locally generated fixtures.
 - Direct MP4, WebM, dynamic, extensionless, and authenticated fixture downloads match expected SHA-256 hashes.
 - Blob, HLS, DASH, segment-heavy, and cross-origin iframe fixtures create no misleading download action.
 - Axe reports no accessibility violations in the populated popup fixture.
-- Keyboard focus order, reduced motion, and 200% text scaling pass automated checks.
+- Keyboard focus order, reduced motion, stable popup proportions, and 200% text scaling pass automated checks.
+- The empty fixture renders at 400×320 CSS pixels, while the two-candidate fixture renders at 400×490 CSS pixels without unused live-status space.
 - The [200% text-scaling screenshot](assets/popup-200-percent.png) keeps the primary action, candidate details, privacy notice, and rights notice visible without horizontal clipping.
 - `npm run audit:artifact` confirms exactly three permissions, one valid zip, packaged project and third-party notices, no host permissions, no background worker, no source maps, no development URL, no remote script/CSS, no `eval`, and no fixture token.
 - `npm audit --omit=dev --audit-level=high` reports zero production dependency vulnerabilities.

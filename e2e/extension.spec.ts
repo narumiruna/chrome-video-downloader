@@ -152,6 +152,26 @@ test.describe
       await downloadAndVerify("Download sample.webm", expectedHashes.webm);
     });
 
+    test("keeps popup proportions stable across empty and found states", async () => {
+      async function popupDimensions() {
+        return popup.locator(".popup-shell").evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return { height: bounds.height, width: bounds.width };
+        });
+      }
+
+      await scan("empty.html", "No direct videos found");
+      const empty = await popupDimensions();
+      expect(empty.width).toBeGreaterThanOrEqual(390);
+      expect(empty.width).toBeLessThanOrEqual(410);
+      expect(empty.height / empty.width).toBeGreaterThanOrEqual(0.75);
+
+      await scan("direct.html", "Direct video fixture");
+      const found = await popupDimensions();
+      expect(found.width).toBe(empty.width);
+      expect(found.height / found.width).toBeLessThanOrEqual(1.25);
+    });
+
     test("downloads dynamic, extensionless, and authenticated direct URLs", async () => {
       await scan("dynamic.html", "Dynamic video fixture");
       await expect(popup.locator("body")).not.toContainText("fixture-secret");

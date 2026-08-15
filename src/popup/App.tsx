@@ -280,7 +280,7 @@ export function App({
         {announcement}
       </p>
       <Separator.Root
-        className="separator"
+        className={`separator${announcement ? "" : " separator-after-empty-status"}`}
         decorative
         orientation="horizontal"
       />
