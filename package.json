@@ -27,6 +27,7 @@
   "dependencies": {
     "@radix-ui/react-scroll-area": "^1.2.18",
     "@radix-ui/react-separator": "^1.1.8",
+    "fast-xml-parser": "^5.10.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

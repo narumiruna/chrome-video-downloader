@@ -5,11 +5,17 @@ import {
 } from "./segment-merger";
 
 export interface ParsedMergeArguments {
+  audioPlaylist?: string;
+  audioRepresentation?: string;
+  dash?: string;
   help: boolean;
   overwrite: boolean;
   output?: string;
   playlist?: string;
   segments: string[];
+  tracks?: string;
+  videoPlaylist?: string;
+  videoRepresentation?: string;
 }
 
 export class CliUsageError extends Error {
@@ -38,8 +44,25 @@ function nextValue(arguments_: string[], index: number, flag: string): string {
   if (!value || value.startsWith("--")) {
     throw new CliUsageError(`${flag} requires a value.`);
   }
+  return value;
+}
+
+function nextPath(arguments_: string[], index: number, flag: string): string {
+  const value = nextValue(arguments_, index, flag);
   if (!isLocalPath(value)) {
     throw new CliUsageError(`${flag} accepts only local filesystem paths.`);
+  }
+  return value;
+}
+
+function nextIdentifier(
+  arguments_: string[],
+  index: number,
+  flag: string,
+): string {
+  const value = nextValue(arguments_, index, flag);
+  if (value.length > 256 || hasControlCharacters(value)) {
+    throw new CliUsageError(`${flag} requires a valid representation ID.`);
   }
   return value;
 }
@@ -47,6 +70,9 @@ function nextValue(arguments_: string[], index: number, flag: string): string {
 export const MERGE_USAGE = `Usage:
   npm run merge:segments -- --playlist <local.m3u8> --output <video.mp4> [--overwrite]
   npm run merge:segments -- --segment <part-01.ts> --segment <part-02.ts> --output <video.mp4> [--overwrite]
+  npm run merge:segments -- --video-playlist <video.m3u8> --audio-playlist <audio.m3u8> --output <video.mp4> [--overwrite]
+  npm run merge:segments -- --dash <local.mpd> [--video-representation <id>] [--audio-representation <id>] --output <video.mkv> [--overwrite]
+  npm run merge:segments -- --tracks <local.json> --output <video.mkv> [--overwrite]
 
 Only finite, unencrypted, local media is accepted. Network URLs are rejected.`;
 
@@ -63,8 +89,14 @@ export interface MergeCliDependencies {
 export function parseMergeArguments(
   arguments_: string[],
 ): ParsedMergeArguments {
+  let audioPlaylist: string | undefined;
+  let audioRepresentation: string | undefined;
+  let dash: string | undefined;
   let output: string | undefined;
   let playlist: string | undefined;
+  let tracks: string | undefined;
+  let videoPlaylist: string | undefined;
+  let videoRepresentation: string | undefined;
   let overwrite = false;
   let help = false;
   const segments: string[] = [];
@@ -79,20 +111,47 @@ export function parseMergeArguments(
       overwrite = true;
       continue;
     }
-    if (argument === "--playlist") {
-      if (playlist) throw new CliUsageError("--playlist may be provided once.");
-      playlist = nextValue(arguments_, index, argument);
-      index += 1;
-      continue;
-    }
     if (argument === "--segment") {
-      segments.push(nextValue(arguments_, index, argument));
+      segments.push(nextPath(arguments_, index, argument));
       index += 1;
       continue;
     }
-    if (argument === "--output") {
-      if (output) throw new CliUsageError("--output may be provided once.");
-      output = nextValue(arguments_, index, argument);
+
+    const pathFlags = new Map<
+      string,
+      [string | undefined, (value: string) => void]
+    >([
+      ["--playlist", [playlist, (value) => (playlist = value)]],
+      ["--video-playlist", [videoPlaylist, (value) => (videoPlaylist = value)]],
+      ["--audio-playlist", [audioPlaylist, (value) => (audioPlaylist = value)]],
+      ["--dash", [dash, (value) => (dash = value)]],
+      ["--tracks", [tracks, (value) => (tracks = value)]],
+      ["--output", [output, (value) => (output = value)]],
+    ]);
+    const pathFlag = pathFlags.get(argument);
+    if (pathFlag) {
+      if (pathFlag[0]) {
+        throw new CliUsageError(`${argument} may be provided once.`);
+      }
+      pathFlag[1](nextPath(arguments_, index, argument));
+      index += 1;
+      continue;
+    }
+
+    if (
+      argument === "--video-representation" ||
+      argument === "--audio-representation"
+    ) {
+      const current =
+        argument === "--video-representation"
+          ? videoRepresentation
+          : audioRepresentation;
+      if (current) {
+        throw new CliUsageError(`${argument} may be provided once.`);
+      }
+      const value = nextIdentifier(arguments_, index, argument);
+      if (argument === "--video-representation") videoRepresentation = value;
+      else audioRepresentation = value;
       index += 1;
       continue;
     }
@@ -100,11 +159,26 @@ export function parseMergeArguments(
   }
 
   if (help) return { help, overwrite, segments };
-  if (!playlist && segments.length === 0) {
+  if (Boolean(videoPlaylist) !== Boolean(audioPlaylist)) {
+    throw new CliUsageError(
+      "Provide both --video-playlist and --audio-playlist.",
+    );
+  }
+  if ((videoRepresentation || audioRepresentation) && !dash) {
+    throw new CliUsageError("Representation selectors require --dash.");
+  }
+  const modeCount = [
+    Boolean(playlist),
+    segments.length > 0,
+    Boolean(videoPlaylist && audioPlaylist),
+    Boolean(dash),
+    Boolean(tracks),
+  ].filter(Boolean).length;
+  if (modeCount === 0) {
     throw new CliUsageError("Provide a playlist or at least one segment.");
   }
-  if (playlist && segments.length > 0) {
-    throw new CliUsageError("Choose either a playlist or ordered segments.");
+  if (modeCount > 1) {
+    throw new CliUsageError("Choose either one input mode, not multiple.");
   }
   if (!output) throw new CliUsageError("Provide an output path.");
 
@@ -112,8 +186,14 @@ export function parseMergeArguments(
     help,
     overwrite,
     output,
-    ...(playlist ? { playlist } : {}),
     segments,
+    ...(playlist ? { playlist } : {}),
+    ...(videoPlaylist ? { videoPlaylist } : {}),
+    ...(audioPlaylist ? { audioPlaylist } : {}),
+    ...(dash ? { dash } : {}),
+    ...(tracks ? { tracks } : {}),
+    ...(videoRepresentation ? { videoRepresentation } : {}),
+    ...(audioRepresentation ? { audioRepresentation } : {}),
   };
 }
 
@@ -140,8 +220,18 @@ export async function runMergeCli(
     const request: LocalMergeRequest = {
       output: parsed.output as string,
       overwrite: parsed.overwrite,
-      ...(parsed.playlist ? { playlist: parsed.playlist } : {}),
       segments: parsed.segments,
+      ...(parsed.playlist ? { playlist: parsed.playlist } : {}),
+      ...(parsed.videoPlaylist ? { videoPlaylist: parsed.videoPlaylist } : {}),
+      ...(parsed.audioPlaylist ? { audioPlaylist: parsed.audioPlaylist } : {}),
+      ...(parsed.dash ? { dash: parsed.dash } : {}),
+      ...(parsed.tracks ? { tracks: parsed.tracks } : {}),
+      ...(parsed.videoRepresentation
+        ? { videoRepresentation: parsed.videoRepresentation }
+        : {}),
+      ...(parsed.audioRepresentation
+        ? { audioRepresentation: parsed.audioRepresentation }
+        : {}),
     };
     const result = await (dependencies.merge ?? mergeLocalSegments)(request, {
       signal: dependencies.signal,

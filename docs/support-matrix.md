@@ -10,6 +10,8 @@ It does not bypass authentication, anti-hotlinking, paywalls, DRM, or website co
 
 The execution request for `docs/plans/archived/2026-08-15_chrome-video-downloader-plan.md` approves this MVP wording and scope.
 
+The separate local CLI can remux bounded authorized adaptive-stream files already on disk, but it does not change extension behavior or acquire media from websites.
+
 ## Verified environment
 
 | Component | Verified value |
@@ -48,6 +50,11 @@ A manual load-unpacked pass in branded Chrome remains a release-operator check b
 | `chrome://`, `edge://`, `devtools://`, `view-source:`, `file:` | Restricted | Unit coverage proves these schemes do not reach script injection. |
 | Chrome Web Store pages | Restricted | Both current and legacy Web Store URLs are blocked before injection. |
 | DRM/EME, paywall, CAPTCHA, or access-control bypass | Prohibited | No implementation, permission, or product claim supports these paths. |
+| Paired finite local HLS media playlists | Supported by local CLI only | Native integration verifies H.264 video plus AAC audio in a 2.027-second MP4. |
+| Bounded static local DASH | Supported by local CLI only | Native integration verifies one selected H.264 representation plus one AAC representation in a 2.005-second MP4. |
+| Authorized local fragmented MP4 track manifest | Supported by local CLI only | Native integration assembles ordered init/media fragments and verifies H.264 plus AAC in a 2.005-second MP4. |
+| Authorized local fragmented WebM track manifest | Supported by local CLI only | Native integration assembles ordered init/media fragments and verifies VP9 plus Opus in a 2.008-second WebM. |
+| Adaptive-stream website acquisition or browser MSE capture | Prohibited | The local CLI accepts only validated files already on disk and the extension continues to show adaptive streams as unsupported. |
 
 ## Fixture ownership and regeneration
 
@@ -62,4 +69,14 @@ ffmpeg -y -i e2e/fixtures/media/sample.mp4 -c copy -hls_time 0.5 -hls_playlist_t
 ffmpeg -y -i e2e/fixtures/media/sample.mp4 -map 0:v -c copy -use_template 1 -use_timeline 1 -f dash e2e/fixtures/manifests/dash/sample.mpd
 ```
 
-After regeneration, update the expected hashes in `e2e/extension.spec.ts` and rerun `npm run ci`.
+After regenerating the browser fixtures, update the expected hashes in `e2e/extension.spec.ts`.
+
+Regenerate the separate-track local adaptive fixtures with:
+
+```sh
+tests/fixtures/local-streams/generate.sh
+```
+
+After regenerating the adaptive fixtures, update `tests/fixtures/local-streams/SHA256SUMS` and the representative hashes in `docs/adr/0002-authorized-local-adaptive-streams.md`.
+
+Rerun `npm run ci` after changing either fixture set.

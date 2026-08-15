@@ -18,7 +18,7 @@ build:
 zip:
     npm run zip
 
-# Merge a local playlist or ordered local segments.
+# Merge authorized local playlists, DASH, track manifests, or ordered segments.
 merge *args:
     npm run merge:segments -- {{args}}
 

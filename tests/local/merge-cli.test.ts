@@ -38,6 +38,66 @@ describe("parseMergeArguments", () => {
     ).toEqual(["part-02.ts", "part-01.ts"]);
   });
 
+  test("parses paired HLS playlists", () => {
+    expect(
+      parseMergeArguments([
+        "--video-playlist",
+        "video.m3u8",
+        "--audio-playlist",
+        "audio.m3u8",
+        "--output",
+        "result.mp4",
+      ]),
+    ).toEqual({
+      audioPlaylist: "audio.m3u8",
+      help: false,
+      overwrite: false,
+      output: "result.mp4",
+      segments: [],
+      videoPlaylist: "video.m3u8",
+    });
+  });
+
+  test("parses a DASH request with explicit representations", () => {
+    expect(
+      parseMergeArguments([
+        "--dash",
+        "presentation.mpd",
+        "--video-representation",
+        "video-main",
+        "--audio-representation",
+        "audio-main",
+        "--output",
+        "result.mkv",
+      ]),
+    ).toEqual({
+      audioRepresentation: "audio-main",
+      dash: "presentation.mpd",
+      help: false,
+      overwrite: false,
+      output: "result.mkv",
+      segments: [],
+      videoRepresentation: "video-main",
+    });
+  });
+
+  test("parses a local track manifest", () => {
+    expect(
+      parseMergeArguments([
+        "--tracks",
+        "tracks.json",
+        "--output",
+        "result.webm",
+      ]),
+    ).toEqual({
+      help: false,
+      overwrite: false,
+      output: "result.webm",
+      segments: [],
+      tracks: "tracks.json",
+    });
+  });
+
   test.each([
     { args: ["--output", "result.mp4"], message: "Provide a playlist" },
     {
@@ -59,6 +119,43 @@ describe("parseMergeArguments", () => {
         "result.mp4",
       ],
       message: "local filesystem paths",
+    },
+    {
+      args: ["--video-playlist", "video.m3u8", "--output", "result.mp4"],
+      message: "both --video-playlist and --audio-playlist",
+    },
+    {
+      args: [
+        "--tracks",
+        "tracks.json",
+        "--dash",
+        "presentation.mpd",
+        "--output",
+        "result.mkv",
+      ],
+      message: "Choose either one input mode",
+    },
+    {
+      args: [
+        "--video-representation",
+        "video-main",
+        "--segment",
+        "part.m4s",
+        "--output",
+        "result.mp4",
+      ],
+      message: "Representation selectors require --dash",
+    },
+    {
+      args: [
+        "--tracks",
+        "tracks.json",
+        "--tracks",
+        "other.json",
+        "--output",
+        "result.mkv",
+      ],
+      message: "--tracks may be provided once",
     },
     {
       args: ["--playlist", "video.m3u8", "--output", "result.mp4", "--wat"],
@@ -113,6 +210,39 @@ describe("runMergeCli", () => {
       "Merged video + audio into /tmp/result.mp4",
     );
     expect(error).not.toHaveBeenCalled();
+  });
+
+  test("forwards a paired HLS request", async () => {
+    const merge = vi.fn().mockResolvedValue({
+      outputPath: "/tmp/result.mp4",
+      streamTypes: ["video", "audio"],
+    });
+
+    await expect(
+      runMergeCli(
+        [
+          "--video-playlist",
+          "video.m3u8",
+          "--audio-playlist",
+          "audio.m3u8",
+          "--output",
+          "result.mp4",
+        ],
+        { error: vi.fn(), log: vi.fn() },
+        { merge },
+      ),
+    ).resolves.toBe(0);
+
+    expect(merge).toHaveBeenCalledWith(
+      {
+        audioPlaylist: "audio.m3u8",
+        output: "result.mp4",
+        overwrite: false,
+        segments: [],
+        videoPlaylist: "video.m3u8",
+      },
+      { signal: undefined },
+    );
   });
 
   test("uses distinct exit codes for usage and merge failures", async () => {

@@ -1,52 +1,36 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import {
+  type FileHandle,
   link,
   lstat,
   open,
-  readFile,
   realpath,
   rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import {
-  basename,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  resolve,
-  sep,
-} from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  type ValidatedAdaptiveTrack,
+  validateLocalDashManifest,
+  validateLocalTrackManifest,
+} from "./adaptive-input";
+import {
+  hasControlCharacters,
+  isFilesystemPath,
+  MAX_LOCAL_REFERENCES,
+  readBoundedLocalFile,
+  rejectManifestLikeFile,
+  requireRegularFile,
+  resolveLocalReference,
+} from "./local-files";
+import { SegmentMergeError } from "./merge-errors";
 
-const MAX_PLAYLIST_BYTES = 1_048_576;
-const MAX_MEDIA_REFERENCES = 10_000;
-const MAX_URI_LENGTH = 8_192;
-
-export type SegmentMergeErrorCode =
-  | "encrypted-input"
-  | "invalid-input"
-  | "live-input"
-  | "master-playlist"
-  | "merge-failed"
-  | "missing-input"
-  | "output-exists"
-  | "path-escape"
-  | "remote-input"
-  | "verification-failed";
-
-export class SegmentMergeError extends Error {
-  constructor(
-    public readonly code: SegmentMergeErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "SegmentMergeError";
-  }
-}
+export { SegmentMergeError } from "./merge-errors";
 
 export interface ValidatedHlsPlaylist {
   playlistPath: string;
@@ -55,10 +39,16 @@ export interface ValidatedHlsPlaylist {
 }
 
 export interface LocalMergeRequest {
+  audioPlaylist?: string;
+  audioRepresentation?: string;
+  dash?: string;
   output: string;
   overwrite: boolean;
   playlist?: string;
   segments: string[];
+  tracks?: string;
+  videoPlaylist?: string;
+  videoRepresentation?: string;
 }
 
 export interface CommandResult {
@@ -72,115 +62,24 @@ export type CommandRunner = (
   signal?: AbortSignal,
 ) => Promise<CommandResult>;
 
+export type TrackChunkWriter = (
+  target: FileHandle,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+) => Promise<number>;
+
 export interface MergeDependencies {
   ffmpegPath?: string;
   ffprobePath?: string;
   runCommand?: CommandRunner;
   signal?: AbortSignal;
+  writeTrackChunk?: TrackChunkWriter;
 }
 
 export interface MergeResult {
   outputPath: string;
   streamTypes: string[];
-}
-
-async function requireRegularFile(
-  path: string,
-  missingMessage: string,
-): Promise<string> {
-  let canonicalPath: string;
-  try {
-    canonicalPath = await realpath(path);
-    const file = await stat(canonicalPath);
-    if (!file.isFile()) {
-      throw new SegmentMergeError(
-        "invalid-input",
-        `${path} is not a regular file.`,
-      );
-    }
-  } catch (error) {
-    if (error instanceof SegmentMergeError) throw error;
-    throw new SegmentMergeError("missing-input", missingMessage);
-  }
-  return canonicalPath;
-}
-
-function isInside(directory: string, path: string): boolean {
-  return path.startsWith(`${directory}${sep}`);
-}
-
-async function rejectNestedManifest(path: string): Promise<void> {
-  const file = await open(path, "r");
-  try {
-    const buffer = Buffer.alloc(4_096);
-    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-    const header = buffer
-      .subarray(0, bytesRead)
-      .toString("utf8")
-      .replace(/^\uFEFF/, "")
-      .trimStart();
-    if (
-      header.startsWith("#EXTM3U") ||
-      header.startsWith("ffconcat version") ||
-      /^(?:<\?xml[^>]*>\s*)?<MPD[\s>]/i.test(header)
-    ) {
-      throw new SegmentMergeError(
-        "invalid-input",
-        "Nested media playlists and concat manifests are not accepted as segments.",
-      );
-    }
-  } finally {
-    await file.close();
-  }
-}
-
-function decodeLocalUri(uri: string): string {
-  if (
-    uri.length === 0 ||
-    uri.length > MAX_URI_LENGTH ||
-    hasControlCharacters(uri)
-  ) {
-    throw new SegmentMergeError(
-      "invalid-input",
-      "The playlist contains an invalid URI.",
-    );
-  }
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(uri);
-  } catch {
-    throw new SegmentMergeError(
-      "invalid-input",
-      "The playlist contains a malformed URI.",
-    );
-  }
-  if (hasControlCharacters(decoded)) {
-    throw new SegmentMergeError(
-      "invalid-input",
-      "The playlist contains an invalid URI.",
-    );
-  }
-  if (
-    isAbsolute(decoded) ||
-    /^[\\/]{2}/.test(decoded) ||
-    /^[a-z][a-z\d+.-]*:/i.test(decoded)
-  ) {
-    throw new SegmentMergeError(
-      "remote-input",
-      "The playlist may reference only relative local files.",
-    );
-  }
-  if (
-    decoded.includes("?") ||
-    decoded.includes("#") ||
-    decoded.includes("\\")
-  ) {
-    throw new SegmentMergeError(
-      "remote-input",
-      "Playlist URIs may not contain query strings, fragments, or backslashes.",
-    );
-  }
-  return decoded;
 }
 
 function playlistUris(lines: string[]): {
@@ -203,21 +102,30 @@ function playlistUris(lines: string[]): {
   return { segmentCount, uris };
 }
 
+function hlsAttributeValues(line: string, name: string): string[] {
+  const attributes = line.slice(line.indexOf(":") + 1);
+  const parts: string[] = [];
+  let quoted = false;
+  let start = 0;
+  for (let index = 0; index <= attributes.length; index += 1) {
+    const character = attributes[index];
+    if (character === '"') quoted = !quoted;
+    if ((character === "," && !quoted) || index === attributes.length) {
+      parts.push(attributes.slice(start, index));
+      start = index + 1;
+    }
+  }
+  return parts
+    .map((part) => part.split("=", 2))
+    .filter(([key, value]) => key?.trim().toUpperCase() === name && value)
+    .map(([, value]) => value?.trim() as string);
+}
+
 export async function validateLocalHlsPlaylist(
   playlistPath: string,
 ): Promise<ValidatedHlsPlaylist> {
-  const absolutePlaylistPath = resolve(playlistPath);
-  const canonicalPlaylistPath = await requireRegularFile(
-    absolutePlaylistPath,
-    `Playlist not found: ${playlistPath}`,
-  );
-  const playlistFile = await stat(canonicalPlaylistPath);
-  if (playlistFile.size > MAX_PLAYLIST_BYTES) {
-    throw new SegmentMergeError("invalid-input", "The playlist is too large.");
-  }
-
-  const content = await readFile(canonicalPlaylistPath, "utf8");
-  const lines = content
+  const playlist = await readBoundedLocalFile(playlistPath, "Playlist");
+  const lines = playlist.content
     .replace(/^\uFEFF/, "")
     .split(/\r?\n/)
     .map((line) => line.trim());
@@ -228,11 +136,11 @@ export async function validateLocalHlsPlaylist(
     );
   }
   if (
-    lines.some(
-      (line) =>
-        /^#EXT-X-(?:SESSION-)?KEY:/i.test(line) &&
-        !/METHOD=NONE(?:,|$)/i.test(line),
-    )
+    lines.some((line) => {
+      if (!/^#EXT-X-(?:SESSION-)?KEY:/i.test(line)) return false;
+      const methods = hlsAttributeValues(line, "METHOD");
+      return methods.length !== 1 || methods[0]?.toUpperCase() !== "NONE";
+    })
   ) {
     throw new SegmentMergeError(
       "encrypted-input",
@@ -263,35 +171,18 @@ export async function validateLocalHlsPlaylist(
   }
 
   const { segmentCount, uris } = playlistUris(lines);
-  if (segmentCount === 0 || uris.length > MAX_MEDIA_REFERENCES) {
+  if (segmentCount === 0 || uris.length > MAX_LOCAL_REFERENCES) {
     throw new SegmentMergeError(
       "invalid-input",
       "The playlist has no segments or too many media references.",
     );
   }
 
-  const root = await realpath(dirname(canonicalPlaylistPath));
   const mediaPaths: string[] = [];
   const resolvedUris: string[] = [];
   for (const uri of uris) {
-    const candidatePath = resolve(root, decodeLocalUri(uri));
-    if (!isInside(root, candidatePath)) {
-      throw new SegmentMergeError(
-        "path-escape",
-        "A playlist reference escapes the playlist directory.",
-      );
-    }
-    const canonicalMediaPath = await requireRegularFile(
-      candidatePath,
-      `Referenced media file not found: ${uri}`,
-    );
-    if (!isInside(root, canonicalMediaPath)) {
-      throw new SegmentMergeError(
-        "path-escape",
-        "A playlist reference escapes the playlist directory through a symlink.",
-      );
-    }
-    await rejectNestedManifest(canonicalMediaPath);
+    const canonicalMediaPath = await resolveLocalReference(playlist.root, uri);
+    await rejectManifestLikeFile(canonicalMediaPath);
     resolvedUris.push(canonicalMediaPath);
     if (!mediaPaths.includes(canonicalMediaPath))
       mediaPaths.push(canonicalMediaPath);
@@ -318,29 +209,10 @@ export async function validateLocalHlsPlaylist(
     .join("\n");
 
   return {
-    playlistPath: canonicalPlaylistPath,
+    playlistPath: playlist.path,
     mediaPaths,
     sanitizedContent: `${sanitizedContent}\n`,
   };
-}
-
-function hasControlCharacters(value: string): boolean {
-  for (const character of value) {
-    const code = character.codePointAt(0) as number;
-    if (code <= 31 || code === 127) return true;
-  }
-  return false;
-}
-
-function isFilesystemPath(path: string): boolean {
-  if (
-    path.length === 0 ||
-    hasControlCharacters(path) ||
-    /^[\\/]{2}/.test(path)
-  ) {
-    return false;
-  }
-  return !/^[a-z][a-z\d+.-]*:/i.test(path) || /^[a-z]:[\\/]/i.test(path);
 }
 
 function boundedText(value: unknown): string {
@@ -471,7 +343,7 @@ async function validateOutput(
 }
 
 async function validateExplicitSegments(paths: string[]): Promise<string[]> {
-  if (paths.length === 0 || paths.length > MAX_MEDIA_REFERENCES) {
+  if (paths.length === 0 || paths.length > MAX_LOCAL_REFERENCES) {
     throw new SegmentMergeError(
       "invalid-input",
       "Provide between 1 and 10,000 ordered segment files.",
@@ -495,7 +367,7 @@ async function validateExplicitSegments(paths: string[]): Promise<string[]> {
       resolve(path),
       `Segment not found: ${path}`,
     );
-    await rejectNestedManifest(canonicalPath);
+    await rejectManifestLikeFile(canonicalPath);
     canonicalPaths.push(canonicalPath);
   }
   return canonicalPaths;
@@ -503,6 +375,20 @@ async function validateExplicitSegments(paths: string[]): Promise<string[]> {
 
 function escapeConcatPath(path: string): string {
   return path.replaceAll("'", "'\\''");
+}
+
+async function writePrivateTemporary(
+  path: string,
+  content: string,
+): Promise<void> {
+  try {
+    await writeFile(path, content, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      await rm(path, { force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 function temporaryOutputPath(outputPath: string): string {
@@ -576,24 +462,292 @@ function normalizeFailure(
   );
 }
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new SegmentMergeError("merge-failed", "The merge was cancelled.");
+  }
+}
+
+type ValidatedMergeSource =
+  | {
+      mediaPaths: string[];
+      mode: "segments";
+    }
+  | {
+      mediaPaths: string[];
+      mode: "single-playlist";
+      playlists: ValidatedHlsPlaylist[];
+    }
+  | {
+      mediaPaths: string[];
+      mode: "paired-playlists";
+      playlists: ValidatedHlsPlaylist[];
+      trackKinds: Array<"audio" | "video">;
+    }
+  | {
+      mediaPaths: string[];
+      mode: "adaptive-tracks";
+      tracks: ValidatedAdaptiveTrack[];
+    };
+
+async function validateMergeSource(
+  request: LocalMergeRequest,
+): Promise<ValidatedMergeSource> {
+  if (Boolean(request.videoPlaylist) !== Boolean(request.audioPlaylist)) {
+    throw new SegmentMergeError(
+      "invalid-input",
+      "Provide both local video and audio playlists.",
+    );
+  }
+  if (
+    (request.videoRepresentation || request.audioRepresentation) &&
+    !request.dash
+  ) {
+    throw new SegmentMergeError(
+      "invalid-input",
+      "Representation selectors require a DASH manifest.",
+    );
+  }
+  const pairedPlaylists = Boolean(
+    request.videoPlaylist && request.audioPlaylist,
+  );
+  const modeCount = [
+    Boolean(request.playlist),
+    request.segments.length > 0,
+    pairedPlaylists,
+    Boolean(request.dash),
+    Boolean(request.tracks),
+  ].filter(Boolean).length;
+  if (modeCount !== 1) {
+    throw new SegmentMergeError(
+      "invalid-input",
+      "Choose either one local playlist, ordered segments, paired playlists, DASH, or a track manifest.",
+    );
+  }
+
+  if (request.playlist) {
+    const playlist = await validateLocalHlsPlaylist(request.playlist);
+    return {
+      mediaPaths: playlist.mediaPaths,
+      mode: "single-playlist",
+      playlists: [playlist],
+    };
+  }
+  if (request.segments.length > 0) {
+    return {
+      mediaPaths: await validateExplicitSegments(request.segments),
+      mode: "segments",
+    };
+  }
+  if (request.videoPlaylist && request.audioPlaylist) {
+    const playlists = [
+      await validateLocalHlsPlaylist(request.videoPlaylist),
+      await validateLocalHlsPlaylist(request.audioPlaylist),
+    ];
+    return {
+      mediaPaths: playlists.flatMap((playlist) => playlist.mediaPaths),
+      mode: "paired-playlists",
+      playlists,
+      trackKinds: ["video", "audio"],
+    };
+  }
+  const adaptive = request.dash
+    ? await validateLocalDashManifest(request.dash, {
+        ...(request.videoRepresentation
+          ? { videoRepresentation: request.videoRepresentation }
+          : {}),
+        ...(request.audioRepresentation
+          ? { audioRepresentation: request.audioRepresentation }
+          : {}),
+      })
+    : await validateLocalTrackManifest(request.tracks as string);
+  return {
+    mediaPaths: adaptive.tracks.flatMap((track) => [
+      track.initPath,
+      ...track.segmentPaths,
+    ]),
+    mode: "adaptive-tracks",
+    tracks: adaptive.tracks,
+  };
+}
+
+const writeTrackChunk: TrackChunkWriter = async (
+  target,
+  buffer,
+  offset,
+  length,
+) => (await target.write(buffer, offset, length)).bytesWritten;
+
+async function assembleTrack(
+  track: ValidatedAdaptiveTrack,
+  outputDirectory: string,
+  signal?: AbortSignal,
+  writeChunk: TrackChunkWriter = writeTrackChunk,
+): Promise<string> {
+  const assembledPath = join(
+    outputDirectory,
+    `.track-${track.kind}-${randomUUID()}${track.temporaryExtension}`,
+  );
+  const target = await open(assembledPath, "wx", 0o600);
+  let failure: unknown;
+  try {
+    for (const sourcePath of [track.initPath, ...track.segmentPaths]) {
+      throwIfCancelled(signal);
+      try {
+        for await (const chunk of createReadStream(sourcePath, { signal })) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          let offset = 0;
+          while (offset < buffer.byteLength) {
+            throwIfCancelled(signal);
+            const bytesWritten = await writeChunk(
+              target,
+              buffer,
+              offset,
+              buffer.byteLength - offset,
+            );
+            if (bytesWritten === 0) {
+              throw new Error("The assembled track write made no progress.");
+            }
+            offset += bytesWritten;
+          }
+        }
+      } catch (error) {
+        throwIfCancelled(signal);
+        throw error;
+      }
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    try {
+      await target.close();
+    } catch (error) {
+      failure ??= error;
+    }
+  }
+  if (failure) {
+    await rm(assembledPath, { force: true }).catch(() => undefined);
+    throw failure;
+  }
+  return assembledPath;
+}
+
+function mapArguments(trackKinds?: Array<"audio" | "video">): string[] {
+  if (!trackKinds) return ["-map", "0"];
+  return trackKinds.flatMap((kind, index) => ["-map", `${index}:${kind[0]}:0`]);
+}
+
+interface ProbeStream {
+  codec_name?: unknown;
+  codec_type?: unknown;
+  duration?: unknown;
+  start_time?: unknown;
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function verifyProbe(
+  probe: unknown,
+  expectedTypes?: Array<"audio" | "video">,
+): string[] {
+  if (!probe || typeof probe !== "object") {
+    throw new SegmentMergeError(
+      "verification-failed",
+      "FFprobe returned an invalid result.",
+    );
+  }
+  const rawStreams = (probe as { streams?: unknown }).streams;
+  const streams = Array.isArray(rawStreams)
+    ? rawStreams.filter(
+        (stream): stream is ProbeStream =>
+          typeof stream === "object" && stream !== null,
+      )
+    : [];
+  const mediaStreams = streams.filter(
+    (stream) => stream.codec_type === "audio" || stream.codec_type === "video",
+  );
+  if (mediaStreams.length === 0) {
+    throw new SegmentMergeError(
+      "verification-failed",
+      "The merged output has no audio or video streams.",
+    );
+  }
+
+  if (expectedTypes) {
+    if (mediaStreams.length !== expectedTypes.length) {
+      throw new SegmentMergeError(
+        "verification-failed",
+        "The merged output contains an unexpected number of media streams.",
+      );
+    }
+    for (const type of expectedTypes) {
+      const matches = mediaStreams.filter(
+        (stream) => stream.codec_type === type,
+      );
+      if (
+        matches.length !== 1 ||
+        typeof matches[0]?.codec_name !== "string" ||
+        matches[0].codec_name.length === 0
+      ) {
+        throw new SegmentMergeError(
+          "verification-failed",
+          `The merged output does not contain exactly one verified ${type} stream.`,
+        );
+      }
+    }
+    const duration = finiteNumber(
+      (probe as { format?: { duration?: unknown } }).format?.duration,
+    );
+    if (duration === null || duration <= 0) {
+      throw new SegmentMergeError(
+        "verification-failed",
+        "The merged output does not have a finite positive duration.",
+      );
+    }
+    const video = mediaStreams.find((stream) => stream.codec_type === "video");
+    const audio = mediaStreams.find((stream) => stream.codec_type === "audio");
+    if (video && audio) {
+      const videoStart = finiteNumber(video.start_time);
+      const audioStart = finiteNumber(audio.start_time);
+      if (
+        videoStart === null ||
+        audioStart === null ||
+        Math.abs(videoStart - audioStart) > 0.25
+      ) {
+        throw new SegmentMergeError(
+          "verification-failed",
+          "The merged audio and video start times are not synchronized.",
+        );
+      }
+      const videoDuration = finiteNumber(video.duration);
+      const audioDuration = finiteNumber(audio.duration);
+      if (
+        videoDuration !== null &&
+        audioDuration !== null &&
+        Math.abs(videoDuration - audioDuration) > 0.25
+      ) {
+        throw new SegmentMergeError(
+          "verification-failed",
+          "The merged audio and video durations are not synchronized.",
+        );
+      }
+    }
+  }
+
+  return mediaStreams.map((stream) => stream.codec_type as "audio" | "video");
+}
+
 export async function mergeLocalSegments(
   request: LocalMergeRequest,
   dependencies: MergeDependencies = {},
 ): Promise<MergeResult> {
-  if (Boolean(request.playlist) === request.segments.length > 0) {
-    throw new SegmentMergeError(
-      "invalid-input",
-      "Choose either one local HLS playlist or ordered local segments.",
-    );
-  }
-  if (dependencies.signal?.aborted) {
-    throw new SegmentMergeError("merge-failed", "The merge was cancelled.");
-  }
-
+  throwIfCancelled(dependencies.signal);
+  const source = await validateMergeSource(request);
   const output = await validateOutput(request.output, request.overwrite);
-  const source = request.playlist
-    ? await validateLocalHlsPlaylist(request.playlist)
-    : { mediaPaths: await validateExplicitSegments(request.segments) };
   if (source.mediaPaths.includes(output.path)) {
     throw new SegmentMergeError(
       "invalid-input",
@@ -605,42 +759,80 @@ export async function mergeLocalSegments(
   const ffmpegPath = dependencies.ffmpegPath ?? "ffmpeg";
   const ffprobePath = dependencies.ffprobePath ?? "ffprobe";
   const temporaryOutput = temporaryOutputPath(output.path);
-  const sanitizedPlaylist = request.playlist
-    ? join(dirname(output.path), `.playlist-${randomUUID()}.m3u8`)
-    : undefined;
-  const concatManifest = request.playlist
-    ? undefined
-    : join(dirname(output.path), `.segments-${randomUUID()}.ffconcat`);
+  const temporaryInputs: string[] = [];
 
   try {
-    if (sanitizedPlaylist && "sanitizedContent" in source) {
-      await writeFile(sanitizedPlaylist, source.sanitizedContent, {
-        flag: "wx",
-        mode: 0o600,
-      });
-    }
-    if (concatManifest) {
-      const entries = source.mediaPaths
-        .map((path) => `file '${escapeConcatPath(path)}'`)
-        .join("\n");
-      await writeFile(concatManifest, `ffconcat version 1.0\n${entries}\n`, {
-        flag: "wx",
-        mode: 0o600,
-      });
-    }
-
-    const inputArguments = sanitizedPlaylist
-      ? ["-protocol_whitelist", "file", "-i", sanitizedPlaylist]
-      : [
-          "-f",
-          "concat",
-          "-safe",
-          "0",
+    let inputArguments: string[] = [];
+    let trackKinds: Array<"audio" | "video"> | undefined;
+    if (
+      source.mode === "single-playlist" ||
+      source.mode === "paired-playlists"
+    ) {
+      for (const playlist of source.playlists) {
+        const temporaryPlaylist = join(
+          dirname(output.path),
+          `.playlist-${randomUUID()}.m3u8`,
+        );
+        await writePrivateTemporary(
+          temporaryPlaylist,
+          playlist.sanitizedContent,
+        );
+        temporaryInputs.push(temporaryPlaylist);
+        inputArguments.push(
           "-protocol_whitelist",
           "file",
           "-i",
-          concatManifest as string,
-        ];
+          temporaryPlaylist,
+        );
+      }
+      trackKinds =
+        source.mode === "paired-playlists" ? source.trackKinds : undefined;
+    } else if (source.mode === "segments") {
+      const concatManifest = join(
+        dirname(output.path),
+        `.segments-${randomUUID()}.ffconcat`,
+      );
+      const entries = source.mediaPaths
+        .map((path) => `file '${escapeConcatPath(path)}'`)
+        .join("\n");
+      await writePrivateTemporary(
+        concatManifest,
+        `ffconcat version 1.0\n${entries}\n`,
+      );
+      temporaryInputs.push(concatManifest);
+      inputArguments = [
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-protocol_whitelist",
+        "file",
+        "-i",
+        concatManifest,
+      ];
+    } else {
+      trackKinds = source.tracks.map((track) => track.kind);
+      for (const track of source.tracks) {
+        let assembledPath: string;
+        try {
+          assembledPath = await assembleTrack(
+            track,
+            dirname(output.path),
+            dependencies.signal,
+            dependencies.writeTrackChunk,
+          );
+        } catch (error) {
+          throw normalizeFailure(
+            "merge-failed",
+            "Could not assemble a local media track",
+            error,
+          );
+        }
+        temporaryInputs.push(assembledPath);
+        inputArguments.push("-protocol_whitelist", "file", "-i", assembledPath);
+      }
+    }
+
     const movFlags = [".m4v", ".mov", ".mp4"].includes(
       extname(output.path).toLowerCase(),
     )
@@ -656,8 +848,7 @@ export async function mergeLocalSegments(
           "error",
           "-y",
           ...inputArguments,
-          "-map",
-          "0",
+          ...mapArguments(trackKinds),
           "-c",
           "copy",
           ...movFlags,
@@ -683,7 +874,7 @@ export async function mergeLocalSegments(
           "-protocol_whitelist",
           "file",
           "-show_entries",
-          "stream=codec_type",
+          "stream=codec_type,codec_name,start_time,duration:format=duration",
           "-of",
           "json",
           temporaryOutput,
@@ -698,23 +889,9 @@ export async function mergeLocalSegments(
         error,
       );
     }
-    const streamTypes = Array.isArray((probe as { streams?: unknown }).streams)
-      ? (probe as { streams: Array<{ codec_type?: unknown }> }).streams
-          .map((stream) => stream.codec_type)
-          .filter(
-            (type): type is string => type === "audio" || type === "video",
-          )
-      : [];
-    if (streamTypes.length === 0) {
-      throw new SegmentMergeError(
-        "verification-failed",
-        "The merged output has no audio or video streams.",
-      );
-    }
+    const streamTypes = verifyProbe(probe, trackKinds);
 
-    if (dependencies.signal?.aborted) {
-      throw new SegmentMergeError("merge-failed", "The merge was cancelled.");
-    }
+    throwIfCancelled(dependencies.signal);
     try {
       await publishOutput(temporaryOutput, output.path, output.exists);
     } catch (error) {
@@ -728,11 +905,10 @@ export async function mergeLocalSegments(
     return { outputPath: output.path, streamTypes: [...new Set(streamTypes)] };
   } finally {
     await rm(temporaryOutput, { force: true }).catch(() => undefined);
-    if (concatManifest) {
-      await rm(concatManifest, { force: true }).catch(() => undefined);
-    }
-    if (sanitizedPlaylist) {
-      await rm(sanitizedPlaylist, { force: true }).catch(() => undefined);
-    }
+    await Promise.all(
+      temporaryInputs.map((path) =>
+        rm(path, { force: true }).catch(() => undefined),
+      ),
+    );
   }
 }

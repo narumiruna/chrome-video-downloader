@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "video": {
+    "init": "webm/init-stream0.webm",
+    "segments": [
+      "webm/chunk-stream0-00001.webm",
+      "webm/chunk-stream0-00002.webm"
+    ]
+  },
+  "audio": {
+    "init": "webm/init-stream1.webm",
+    "segments": [
+      "webm/chunk-stream1-00001.webm",
+      "webm/chunk-stream1-00002.webm",
+      "webm/chunk-stream1-00003.webm"
+    ]
+  }
+}
