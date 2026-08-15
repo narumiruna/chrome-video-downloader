@@ -80,6 +80,73 @@ test("production artifact loads with the restricted-page recovery state", async 
   }
 });
 
+test("browser action popup opens at a readable width", async () => {
+  const context = await launchExtension(productionExtensionPath);
+  try {
+    const popupUrl = `chrome-extension://${extensionId(productionExtensionPath)}/action/index.html`;
+    const controlPage = await context.newPage();
+    await controlPage.goto(popupUrl);
+    const cdp = await context.newCDPSession(controlPage);
+    const targetsBeforeOpen = await cdp.send("Target.getTargets");
+    const existingTargetIds = new Set(
+      targetsBeforeOpen.targetInfos.map((target) => target.targetId),
+    );
+
+    await controlPage.evaluate(() => chrome.action.openPopup());
+    await expect
+      .poll(async () => {
+        const { targetInfos } = await cdp.send("Target.getTargets");
+        return targetInfos.find(
+          (target) =>
+            target.url === popupUrl && !existingTargetIds.has(target.targetId),
+        )?.targetId;
+      })
+      .not.toBeUndefined();
+    const { targetInfos } = await cdp.send("Target.getTargets");
+    const popupTarget = targetInfos.find(
+      (target) =>
+        target.url === popupUrl && !existingTargetIds.has(target.targetId),
+    );
+    if (!popupTarget) throw new Error("Chrome action popup target disappeared");
+
+    const { sessionId } = await cdp.send("Target.attachToTarget", {
+      targetId: popupTarget.targetId,
+    });
+    const evaluation = new Promise<{ height: number; width: number }>(
+      (resolveEvaluation) => {
+        cdp.on("Target.receivedMessageFromTarget", ({ message }) => {
+          const response = JSON.parse(message) as {
+            id?: number;
+            result?: {
+              result?: { value?: { height: number; width: number } };
+            };
+          };
+          if (response.id === 1 && response.result?.result?.value) {
+            resolveEvaluation(response.result.result.value);
+          }
+        });
+      },
+    );
+    await cdp.send("Target.sendMessageToTarget", {
+      message: JSON.stringify({
+        id: 1,
+        method: "Runtime.evaluate",
+        params: {
+          expression: "document.body.getBoundingClientRect().toJSON()",
+          returnByValue: true,
+        },
+      }),
+      sessionId,
+    });
+
+    const bounds = await evaluation;
+    expect(bounds.width).toBe(400);
+    expect(bounds.height / bounds.width).toBeLessThanOrEqual(1);
+  } finally {
+    await context.close();
+  }
+});
+
 test.describe
   .serial("extension behavior on controlled fixtures", () => {
     let context: BrowserContext;
