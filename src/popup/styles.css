@@ -332,6 +332,47 @@ footer {
   margin-bottom: 0.65rem;
 }
 
+.playback-progress,
+.progress-block {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.progress-bar {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce3ec;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #1769d2;
+  transition: width 0.2s ease;
+}
+
+.progress-text,
+.playback-time {
+  color: #526176;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.status-badge {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.status-badge.success {
+  background: #d8f3e3;
+  color: #17623a;
+}
+
 .scrollbar {
   display: flex;
   width: 0.45rem;
@@ -388,6 +429,20 @@ footer {
     color: #cad3df;
   }
 
+  .progress-bar {
+    background: #354156;
+  }
+
+  .progress-text,
+  .playback-time {
+    color: #aab7c9;
+  }
+
+  .status-badge.success {
+    background: #193f2d;
+    color: #a9e7c3;
+  }
+
   .unsupported-badge {
     background: #2b3748;
     color: #cad3df;
@@ -406,5 +461,9 @@ footer {
   .spinner {
     animation: none;
     border-color: #1769d2;
+  }
+
+  .progress-bar-fill {
+    transition: none;
   }
 }

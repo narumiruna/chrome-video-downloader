@@ -22,8 +22,8 @@ Policies may change, so the publisher must repeat this review immediately before
 | Narrow, understandable single purpose | The product downloads authorized videos by using a direct source or locally remuxing observed compatible fragmented MP4 tracks. |
 | No unauthorized content access | The product does not bypass login, paywall, CAPTCHA, DRM, encryption, anti-hotlinking, or website controls. |
 | Respect copyright | The popup and listing tell users to download only content they own or may save. |
-| Least permissions | `webRequest`, host access, a background worker, `storage.session`, and `alarms` are required for cross-origin fragment discovery, service-worker suspension, and bounded cleanup. |
-| Browsing activity limited to a user-facing feature | The worker filters media-like requests, retains bounded metadata by tab for five minutes, and exposes it only for the assembly feature. |
+| Least permissions | `webRequest`, host access, a read-only top-frame playback monitor, a background worker, `storage.session`, and `alarms` are required for playback progress, cross-origin fragment discovery, service-worker suspension, delayed readiness, and bounded cleanup. |
+| Browsing activity limited to a user-facing feature | The top-frame monitor records only bounded video timing state; the worker filters media-like requests, retains bounded metadata by tab for five minutes, and exposes it only for playback progress and assembly. |
 | User-data disclosure | The listing draft and popup disclose local request-URL processing, while `docs/privacy.md` documents use, recipients, retention, and Limited Use compliance. |
 | Remote code prohibition | All executable muxing code is packaged locally, and the artifact audit rejects remote scripts, remote CSS, `eval`, and source-map references. |
 | Accurate metadata | The listing limits assembly to compatible unencrypted fragmented MP4 and identifies general HLS, DASH manifests, DRM, missing fragments, and bypass behavior as unsupported or prohibited. |

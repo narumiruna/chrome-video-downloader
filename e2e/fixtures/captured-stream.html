@@ -27,6 +27,26 @@
         }),
       ).then(() => {
         document.documentElement.dataset.streamLoaded = "true";
+
+        const video = document.createElement("video");
+        let currentTime = 1;
+        let ended = false;
+        Object.defineProperties(video, {
+          currentTime: { configurable: true, get: () => currentTime },
+          duration: { configurable: true, get: () => 3 },
+          ended: { configurable: true, get: () => ended },
+          paused: { configurable: true, get: () => ended },
+        });
+        document.body.append(video);
+        setTimeout(() => {
+          video.dispatchEvent(new Event("play"));
+          video.dispatchEvent(new Event("timeupdate"));
+
+          currentTime = 3;
+          ended = true;
+          video.dispatchEvent(new Event("ended"));
+          document.documentElement.dataset.playbackEnded = "true";
+        }, 0);
       });
     </script>
   </body>

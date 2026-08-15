@@ -43,6 +43,7 @@ A manual load-unpacked pass in branded Chrome remains a release-operator check b
 | HLS `.m3u8` | Unsupported | The popup identifies HLS manifests but does not parse or assemble them. |
 | MPEG-DASH `.mpd` | Unsupported as a manifest | The popup does not parse MPDs or select DASH representations. |
 | Captured fragmented MP4 video plus audio | Best effort | The browser uses captured initialization responses or bounded embedded initialization metadata matched to exact captured segment URLs, orders media by `tfdt`, and remuxes compatible tracks locally with Mediabunny. |
+| Playback capture progress | Best effort | A read-only top-frame monitor reports bounded HTML video timing state; after `ended`, a three-second alarm refreshes the captured parts and marks assembly ready. Cross-origin iframe DOM and MediaStream content remain uninspected. |
 | Missing, expired, encrypted, mixed-representation, or non-MP4 fragment set | Unsupported | Assembly fails without publishing a partial output and asks the user to replay from the beginning. |
 | Individual `.ts`, `.m4s`, or `.aac` segment | Never presented as a complete video | Captured MP4 parts are grouped behind one assembly action, while TS and AAC parts remain unsupported. |
 | Top-level page with no video | Supported empty state | The popup recommends playing the video and scanning again. |

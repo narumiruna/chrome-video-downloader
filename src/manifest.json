@@ -34,6 +34,14 @@
   "background": {
     "service_worker": "background/index.ts"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/playback-monitor.ts"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "commands": {
     "_execute_action": {
       "suggested_key": {

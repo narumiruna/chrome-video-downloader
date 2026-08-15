@@ -55,7 +55,9 @@ Extension.js opens a fresh Chrome profile with the unpacked extension installed.
 
 Open a page containing a video and click the extension action, or press `Alt+Shift+V`.
 
-For fragmented MP4 playback, play the video from beginning to end before choosing **Assemble MP4** so every initialization and media fragment is available.
+For fragmented MP4 playback, play the video from beginning to end so every initialization and media fragment is available.
+
+The popup shows bounded playback progress and, after a three-second final-fragment grace period, marks the captured stream ready to assemble.
 
 ## Test
 
@@ -100,7 +102,7 @@ To inspect the production build manually:
 ## Architecture
 
 - `src/background/` transiently captures media request URLs and HTTP byte ranges by tab.
-- `src/content/` contains the on-demand, read-only page collector.
+- `src/content/` contains the on-demand page collector and a read-only top-frame playback monitor.
 - `src/core/` validates page data and remuxes captured fragmented MP4 tracks locally.
 - `src/platform/` contains the minimal Chrome API adapters.
 - `src/popup/` contains the React and Radix UI popup.
@@ -110,7 +112,9 @@ To inspect the production build manually:
 
 The production extension uses an in-memory background worker and host access for media request capture.
 
-It has no persistent content script, remote server, analytics, or persistent storage.
+Its static content script observes only top-frame HTML video timing events and sends bounded playback state to the extension.
+
+It has no remote server, analytics, or persistent storage.
 
 ## Product and release documents
 

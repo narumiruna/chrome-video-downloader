@@ -5,7 +5,7 @@ Audit date: August 15, 2026.
 ## Automated evidence
 
 - `npm run check` passes Biome across source, tests, fixtures, scripts, and documentation-supported formats.
-- `npm test` passes 149 unit and component tests, including browser-side fragmented MP4 video/audio remuxing with embedded initialization metadata, adaptive-manifest validation, injected-boundary limits, and local segment merger lifecycle coverage.
+- `npm test` passes 154 unit and component tests, including playback monitoring and progress-state coverage, browser-side fragmented MP4 video/audio remuxing with embedded initialization metadata, adaptive-manifest validation, injected-boundary limits, and local segment merger lifecycle coverage.
 - `npm run typecheck` passes TypeScript strict checking.
 - `npm run test:merge:integration` passes real FFmpeg/FFprobe checks for legacy HLS and ordered MPEG-TS plus separate-track HLS, static DASH, fragmented MP4, and fragmented WebM inputs.
 - `npm run build:chrome` produces `dist/chrome` and `video-downloader-0.1.0.zip` with Extension.js 4.0.32.
@@ -17,7 +17,7 @@ Audit date: August 15, 2026.
 - Keyboard focus order, reduced motion, stable popup proportions, and 200% text scaling pass automated checks.
 - The real Chrome action popup and empty fixture render at 400×320 CSS pixels, while the two-candidate fixture renders at 400×490 CSS pixels without unused live-status space.
 - The [200% text-scaling screenshot](assets/popup-200-percent.png) keeps the primary action, candidate details, privacy notice, and rights notice visible without horizontal clipping.
-- `npm run audit:artifact` confirms the six reviewed permissions, required host access, expected background worker, one valid zip, packaged notices, no source maps, no development URL, no remote script/CSS, no `eval`, and no fixture token.
+- `npm run audit:artifact` confirms the six reviewed permissions, required host access, expected background worker and playback-monitor content script, one valid zip, packaged notices, no source maps, no development URL, no remote script/CSS, no `eval`, and no fixture token.
 - `npm audit --omit=dev --audit-level=high` reports zero production dependency vulnerabilities.
 
 ## Manifest review
@@ -26,7 +26,7 @@ The production manifest contains `activeTab`, `scripting`, `downloads`, `webRequ
 
 The host access and background worker are required to observe cross-origin media responses and fetch the exact fragments chosen for local assembly.
 
-It contains no optional permissions, static content script, `debugger`, `offscreen`, or persistent storage.
+It contains one read-only top-frame playback-monitor content script and no optional permissions, `debugger`, `offscreen`, or persistent storage.
 
 The `Alt+Shift+V` command is an alternate user gesture for opening the action popup and adds no permission.
 
@@ -62,7 +62,9 @@ Chrome owns download continuation after the popup submits the assembled Blob.
 
 Closing the popup stops in-progress assembly.
 
-The background worker keeps at most 1,000 unique URL-and-range records per tab in `storage.session` and removes stale tab records after five minutes.
+The background worker keeps at most 1,000 unique URL-and-range records plus the latest bounded playback state per tab in `storage.session` and removes stale tab records after five minutes.
+
+A one-shot alarm survives service-worker suspension during the three-second final-fragment grace period, while navigation, tab closure, or resumed playback cancels stale readiness.
 
 ## Dependency review
 

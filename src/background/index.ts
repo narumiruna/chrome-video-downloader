@@ -1,4 +1,8 @@
-import { isCapturedMp4PlaylistMetadata } from "../core/captured-mp4-metadata";
+import {
+  capturedMp4TrackKind,
+  isCapturedMp4PlaylistMetadata,
+} from "../core/captured-mp4-metadata";
+import type { PlaybackSnapshot } from "../core/playback-progress";
 
 const VIDEO_MIME_PATTERNS = new Set([
   "audio/mp4",
@@ -50,11 +54,23 @@ interface VideoEntry {
 
 type CaptureStore = Record<string, VideoEntry[]>;
 
+interface PlaybackEntry extends PlaybackSnapshot {
+  assemblyReady: boolean;
+  timestamp: number;
+}
+
+type PlaybackStore = Record<string, PlaybackEntry>;
+
 const STORAGE_KEY = "capturedVideosByTab";
+const PLAYBACK_STORAGE_KEY = "playbackByTab";
 const CAPTURE_TIMEOUT_MS = 5 * 60 * 1000;
+const ASSEMBLY_READY_DELAY_MS = 3_000;
+const ASSEMBLY_ALARM_PREFIX = "assembly-ready:";
+const MAX_PLAYBACK_SECONDS = 7 * 24 * 60 * 60;
 const MAX_VIDEOS_PER_TAB = 1_000;
 const requestRanges = new Map<string, string>();
 let storageQueue: Promise<void> = Promise.resolve();
+let playbackStorageQueue: Promise<void> = Promise.resolve();
 
 function videoExtensionFromUrl(url: string): string {
   try {
@@ -125,6 +141,34 @@ async function videosForTab(tabId: number): Promise<VideoEntry[]> {
   return store[String(tabId)] ?? [];
 }
 
+function parsePlaybackStore(value: unknown): PlaybackStore {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as PlaybackStore;
+}
+
+async function readPlaybackStore(): Promise<PlaybackStore> {
+  const result = await chrome.storage.session.get(PLAYBACK_STORAGE_KEY);
+  return parsePlaybackStore(result[PLAYBACK_STORAGE_KEY]);
+}
+
+function updatePlaybackStore(
+  update: (store: PlaybackStore) => void,
+): Promise<void> {
+  const operation = playbackStorageQueue.then(async () => {
+    const store = await readPlaybackStore();
+    update(store);
+    await chrome.storage.session.set({ [PLAYBACK_STORAGE_KEY]: store });
+  });
+  playbackStorageQueue = operation.catch(() => undefined);
+  return operation;
+}
+
+async function playbackForTab(tabId: number): Promise<PlaybackEntry | null> {
+  await playbackStorageQueue;
+  const store = await readPlaybackStore();
+  return store[String(tabId)] ?? null;
+}
+
 function addToCaptures(tabId: number, entry: VideoEntry): void {
   if (tabId < 0) return;
 
@@ -145,26 +189,82 @@ function addToCaptures(tabId: number, entry: VideoEntry): void {
   });
 }
 
+function assemblyAlarmName(tabId: number): string {
+  return `${ASSEMBLY_ALARM_PREFIX}${tabId}`;
+}
+
 function clearTab(tabId: number): Promise<void> {
-  return updateStore((store) => {
-    delete store[String(tabId)];
-  });
+  void chrome.alarms.clear(assemblyAlarmName(tabId));
+  return Promise.all([
+    updateStore((store) => {
+      delete store[String(tabId)];
+    }),
+    updatePlaybackStore((store) => {
+      delete store[String(tabId)];
+    }),
+  ]).then(() => undefined);
 }
 
 function cleanupStaleCaptures(): Promise<void> {
   const now = Date.now();
-  return updateStore((store) => {
-    for (const [tabId, videos] of Object.entries(store)) {
-      if (!videos.some((video) => now - video.timestamp < CAPTURE_TIMEOUT_MS)) {
-        delete store[tabId];
+  return Promise.all([
+    updateStore((store) => {
+      for (const [tabId, videos] of Object.entries(store)) {
+        if (
+          !videos.some((video) => now - video.timestamp < CAPTURE_TIMEOUT_MS)
+        ) {
+          delete store[tabId];
+        }
       }
-    }
+    }),
+    updatePlaybackStore((store) => {
+      for (const [tabId, playback] of Object.entries(store)) {
+        if (now - playback.timestamp >= CAPTURE_TIMEOUT_MS) {
+          delete store[tabId];
+          void chrome.alarms.clear(assemblyAlarmName(Number(tabId)));
+        }
+      }
+    }),
+  ]).then(() => undefined);
+}
+
+function broadcast(message: unknown): void {
+  try {
+    chrome.runtime.sendMessage(message, () => {
+      void chrome.runtime.lastError;
+    });
+  } catch {
+    // No extension page may be listening while the popup is closed.
+  }
+}
+
+async function markAssemblyReady(tabId: number): Promise<void> {
+  let playback: PlaybackEntry | null = null;
+  await updatePlaybackStore((store) => {
+    const current = store[String(tabId)];
+    if (!current?.ended) return;
+    playback = { ...current, assemblyReady: true };
+    store[String(tabId)] = playback;
   });
+  if (!playback) return;
+
+  const videos = (await videosForTab(tabId)).filter(
+    (video) =>
+      capturedMp4TrackKind(video) !== null ||
+      isCapturedMp4PlaylistMetadata(video),
+  );
+  broadcast({ playback, tabId, type: "triggerAssembly", videos });
 }
 
 chrome.alarms.create("cleanup", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "cleanup") void cleanupStaleCaptures();
+  if (alarm.name === "cleanup") {
+    void cleanupStaleCaptures();
+    return;
+  }
+  if (!alarm.name.startsWith(ASSEMBLY_ALARM_PREFIX)) return;
+  const tabId = Number(alarm.name.slice(ASSEMBLY_ALARM_PREFIX.length));
+  if (Number.isInteger(tabId) && tabId >= 0) void markAssemblyReady(tabId);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -218,31 +318,131 @@ chrome.webRequest.onErrorOccurred.addListener(forgetRequest, {
   urls: ["<all_urls>"],
 });
 
+function validPlaybackSnapshot(value: unknown): PlaybackSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Partial<PlaybackSnapshot>;
+  if (
+    typeof candidate.currentTime !== "number" ||
+    !Number.isFinite(candidate.currentTime) ||
+    candidate.currentTime < 0 ||
+    candidate.currentTime > MAX_PLAYBACK_SECONDS ||
+    typeof candidate.duration !== "number" ||
+    !Number.isFinite(candidate.duration) ||
+    candidate.duration < 0 ||
+    candidate.duration > MAX_PLAYBACK_SECONDS ||
+    typeof candidate.ended !== "boolean" ||
+    typeof candidate.isPlaying !== "boolean" ||
+    typeof candidate.videoId !== "string" ||
+    candidate.videoId.length === 0 ||
+    candidate.videoId.length > 128
+  ) {
+    return null;
+  }
+  return candidate as PlaybackSnapshot;
+}
+
+function senderTabId(sender: chrome.runtime.MessageSender): number | null {
+  const tabId = sender.tab?.id;
+  return Number.isInteger(tabId) && tabId !== undefined && tabId >= 0
+    ? tabId
+    : null;
+}
+
+function recordPlayback(
+  tabId: number,
+  state: PlaybackSnapshot,
+): Promise<PlaybackEntry> {
+  let playback: PlaybackEntry = {
+    ...state,
+    assemblyReady: false,
+    timestamp: Date.now(),
+  };
+  return updatePlaybackStore((store) => {
+    const previous = store[String(tabId)];
+    playback = {
+      ...state,
+      assemblyReady: state.ended && (previous?.assemblyReady ?? false),
+      timestamp: Date.now(),
+    };
+    store[String(tabId)] = playback;
+  }).then(() => playback);
+}
+
 chrome.runtime.onMessage.addListener(
   (
-    message: { type: string; tabId?: number },
-    _sender: chrome.runtime.MessageSender,
+    message: { state?: unknown; tabId?: number; type: string },
+    sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void,
   ) => {
     if (message.type === "getCapturedVideos") {
       const tabId = message.tabId ?? -1;
-      void videosForTab(tabId)
-        .then((videos) => sendResponse({ status: "ok", tabId, videos }))
-        .catch(() => sendResponse({ status: "error", tabId, videos: [] }));
+      void Promise.all([videosForTab(tabId), playbackForTab(tabId)])
+        .then(([videos, playback]) =>
+          sendResponse({ playback, status: "ok", tabId, videos }),
+        )
+        .catch(() =>
+          sendResponse({
+            playback: null,
+            status: "error",
+            tabId,
+            videos: [],
+          }),
+        );
       return true;
     }
 
     if (message.type === "clearCapturedVideos") {
       const operation =
         message.tabId === undefined
-          ? updateStore((store) => {
-              for (const tabId of Object.keys(store)) delete store[tabId];
-            })
+          ? Promise.all([
+              updateStore((store) => {
+                for (const tabId of Object.keys(store)) delete store[tabId];
+              }),
+              updatePlaybackStore((store) => {
+                for (const tabId of Object.keys(store)) {
+                  void chrome.alarms.clear(assemblyAlarmName(Number(tabId)));
+                  delete store[tabId];
+                }
+              }),
+            ])
           : clearTab(message.tabId);
       void operation
         .then(() => sendResponse({ status: "ok" }))
         .catch(() => sendResponse({ status: "error" }));
       return true;
+    }
+
+    if (message.type === "playbackState" || message.type === "videoEnded") {
+      const tabId = senderTabId(sender);
+      const state = validPlaybackSnapshot(message.state);
+      if (tabId === null || !state) {
+        sendResponse({ status: "invalid-playback-state" });
+        return false;
+      }
+
+      const ended = message.type === "videoEnded";
+      const normalized = ended
+        ? { ...state, ended: true, isPlaying: false }
+        : state;
+      void recordPlayback(tabId, normalized)
+        .then((playback) => {
+          broadcast({ playback, tabId, type: "playbackProgress" });
+          if (ended) {
+            chrome.alarms.create(assemblyAlarmName(tabId), {
+              when: Date.now() + ASSEMBLY_READY_DELAY_MS,
+            });
+          } else if (!playback.ended) {
+            void chrome.alarms.clear(assemblyAlarmName(tabId));
+          }
+          sendResponse({ status: "ok" });
+        })
+        .catch(() => sendResponse({ status: "error" }));
+      return true;
+    }
+
+    if (message.type === "videoError") {
+      sendResponse({ status: "ok" });
+      return false;
     }
 
     sendResponse({ status: "unknown-message" });

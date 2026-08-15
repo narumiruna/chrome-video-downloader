@@ -1,11 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import type { assembleCapturedMp4 } from "../../src/core/assemble-captured-mp4";
 import type { VideoCandidate } from "../../src/core/video-candidate";
 import type { DownloadResult } from "../../src/platform/chrome-downloads";
 import type { ScanPageResult } from "../../src/platform/chrome-tabs";
-import { App } from "../../src/popup/App";
+import { App, type PopupRuntime } from "../../src/popup/App";
 
 const direct: VideoCandidate = {
   id: "direct",
@@ -49,7 +49,9 @@ function success(
     iframeUrls: [],
     pageTitle: "Training lesson",
     pageUrl: "https://example.com/watch?private=value",
+    playbackProgress: null,
     status: "success",
+    tabId: 7,
   };
 }
 
@@ -154,6 +156,101 @@ describe("App", () => {
       expect.objectContaining({ type: "video/mp4" }),
       "Training lesson.mp4",
     );
+    expect(await screen.findByText("Sent to Chrome downloads.")).toBeVisible();
+  });
+
+  test("refreshes captured parts after playback and exposes assembly progress", async () => {
+    const initialParts = [
+      {
+        mimeType: "video/mp4",
+        timestamp: 1,
+        url: "https://media.example/video-1.m4s",
+      },
+      {
+        mimeType: "audio/mp4",
+        timestamp: 2,
+        url: "https://media.example/audio-1.m4s",
+      },
+    ];
+    const completedParts = [
+      ...initialParts,
+      {
+        mimeType: "video/mp4",
+        timestamp: 3,
+        url: "https://media.example/video-2.m4s",
+      },
+    ];
+    let listener: ((message: unknown) => void) | undefined;
+    const runtime: PopupRuntime = {
+      onMessage: {
+        addListener: vi.fn((next) => {
+          listener = next;
+        }),
+        removeListener: vi.fn(),
+      },
+    };
+    const assembly = deferred<Blob>();
+    const assembleVideo = vi.fn<typeof assembleCapturedMp4>(
+      async (_requests, options) => {
+        options?.onProgress?.({ phase: "fetching", completed: 2, total: 3 });
+        return assembly.promise;
+      },
+    );
+    const user = userEvent.setup();
+
+    render(
+      <App
+        locale="en"
+        runtime={runtime}
+        scanPage={vi.fn().mockResolvedValue(success([], initialParts))}
+        downloadVideo={vi.fn()}
+        assembleVideo={assembleVideo}
+        downloadAssembledVideo={vi
+          .fn()
+          .mockResolvedValue({ downloadId: 21, status: "accepted" })}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Captured video stream" }),
+    ).toBeVisible();
+    act(() => {
+      listener?.({
+        type: "triggerAssembly",
+        playback: {
+          assemblyReady: true,
+          currentTime: 60,
+          duration: 60,
+          ended: true,
+          isPlaying: false,
+          timestamp: 4,
+          videoId: "1",
+        },
+        tabId: 7,
+        videos: completedParts,
+      });
+    });
+
+    expect(
+      screen.getByText("Playback capture progress: 60/60 (100%)"),
+    ).toBeVisible();
+    expect(
+      screen.getAllByText("Playback complete. The captured stream is ready."),
+    ).toHaveLength(2);
+    expect(screen.getByText("video/mp4 × 2")).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Assemble complete video" }),
+    );
+    expect(assembleVideo).toHaveBeenCalledWith(
+      completedParts,
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(
+      screen.getByRole("progressbar", { name: "Downloading stream parts" }),
+    ).toHaveAttribute("aria-valuenow", "2");
+
+    assembly.resolve(new Blob(["complete"], { type: "video/mp4" }));
     expect(await screen.findByText("Sent to Chrome downloads.")).toBeVisible();
   });
 

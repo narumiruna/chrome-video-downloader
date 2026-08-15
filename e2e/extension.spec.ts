@@ -233,6 +233,10 @@ test.describe
         "data-stream-loaded",
         "true",
       );
+      await expect(fixture.locator("html")).toHaveAttribute(
+        "data-playback-ended",
+        "true",
+      );
       await fixture.bringToFront();
       await popup.reload();
 
@@ -241,9 +245,13 @@ test.describe
       ).toBeVisible();
       await expect(popup.getByText("video/mp4 × 2")).toBeVisible();
       await expect(popup.getByText("audio/mp4 × 3")).toBeVisible();
+      const assembleButton = popup.getByRole("button", {
+        name: "Assemble complete video",
+      });
+      await expect(assembleButton).toBeVisible({ timeout: 7_000 });
 
       const previous = await latestDownload(popup);
-      await popup.getByRole("button", { name: "Assemble MP4" }).click();
+      await assembleButton.click();
       await expect
         .poll(async () => {
           const item = await latestDownload(popup);
