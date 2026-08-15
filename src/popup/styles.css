@@ -328,75 +328,8 @@ footer {
   color: #6c757d;
 }
 
-.captured-video-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  max-height: 10rem;
-  overflow-y: auto;
-}
-
-.captured-video-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid #e1e4e8;
-}
-
-.captured-video-item:last-child {
-  border-bottom: none;
-}
-
-.captured-video-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.12rem;
-  min-width: 5rem;
-}
-
-.captured-video-type {
-  font-size: 0.65rem;
-  padding: 0.1rem 0.25rem;
-  background: #d4edda;
-  color: #155724;
-  border-radius: 0.2rem;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.captured-video-time {
-  font-size: 0.65rem;
-  color: #6c757d;
-}
-
-.captured-video-link {
-  flex: 1;
-  color: #1769d2;
-  text-decoration: none;
-  font-size: 0.7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.captured-video-link:hover {
-  text-decoration: underline;
-}
-
-.download-captured-button {
-  font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
-  background: #1769d2;
-  color: white;
-  border: none;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.download-captured-button:hover {
-  background: #0f56b3;
+.captured-part-counts {
+  margin-bottom: 0.65rem;
 }
 
 .scrollbar {
@@ -427,9 +360,16 @@ footer {
   }
 
   .candidate-card,
+  .captured-video-section,
+  .iframe-info-section,
   .secondary-button {
     border-color: #354156;
     background: #1a2330;
+    color: #edf2f8;
+  }
+
+  .captured-video-section h3,
+  .iframe-info-section h3 {
     color: #edf2f8;
   }
 
@@ -437,6 +377,8 @@ footer {
   .hostname,
   .unsupported-reason,
   footer,
+  .captured-video-hint,
+  .iframe-hint,
   .state-panel > p {
     color: #aab7c9;
   }

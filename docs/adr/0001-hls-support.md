@@ -1,6 +1,6 @@
 # ADR 0001: Do not add HLS assembly to the MVP
 
-- Status: Declined for the MVP.
+- Status: Declined for general HLS; superseded in part by ADR 0003 for captured fragmented MP4 only.
 - Date: August 15, 2026.
 
 ## Context
@@ -51,4 +51,6 @@ The production permission set remains `activeTab`, `scripting`, and `downloads`.
 
 Users receive a truthful HLS explanation instead of a playlist or partial-segment download.
 
-A future proposal may reopen this decision only with a narrow unencrypted VOD contract, controlled multi-variant and separate-audio fixtures, measured memory/CPU evidence, cancellation and cleanup design, policy review, and explicit product approval.
+ADR 0003 reopens only a narrow unencrypted fragmented MP4 profile with separate-audio fixtures, bounded memory, local remuxing, cleanup, and explicit product approval.
+
+General HLS parsing and assembly remain declined.

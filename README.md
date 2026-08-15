@@ -1,8 +1,10 @@
 # Chrome Video Downloader
 
-Chrome Video Downloader finds direct HTTP(S) video files on the current page and sends selected files to Chrome's download manager.
+Chrome Video Downloader finds direct HTTP(S) video files and captures unencrypted fragmented MP4 playback requests from the current tab.
 
-The browser extension does not merge HLS or DASH streams, inspect cross-origin frames, bypass access controls, or handle DRM-protected media.
+It can remux captured MP4 video and audio fragments into one local MP4 without transcoding.
+
+It does not parse general HLS or DASH manifests, repair missing fragments, bypass access controls, or handle DRM-protected media.
 
 Use it only for videos you own or have permission to save.
 
@@ -10,7 +12,7 @@ Use it only for videos you own or have permission to save.
 
 - Node.js 22 or newer.
 - npm 12 or a compatible npm release.
-- Chrome 96 or newer for the required extension APIs.
+- Chrome 102 or newer for the required extension APIs, including `storage.session`.
 - A current Chromium browser for automated E2E tests.
 - FFmpeg and FFprobe for the optional local segment merger and its integration check.
 
@@ -51,7 +53,9 @@ npm run dev
 
 Extension.js opens a fresh Chrome profile with the unpacked extension installed.
 
-Open a page containing a direct video and click the extension action, or press `Alt+Shift+V`.
+Open a page containing a video and click the extension action, or press `Alt+Shift+V`.
+
+For fragmented MP4 playback, play the video from beginning to end before choosing **Assemble MP4** so every initialization and media fragment is available.
 
 ## Test
 
@@ -70,9 +74,9 @@ npm run ci
 
 The E2E suite uses only locally generated media under `e2e/fixtures/`.
 
-It adds a localhost host permission to a temporary copy of the production artifact because headless Chromium cannot invoke the browser toolbar.
+It narrows the production artifact's host permission to localhost in a temporary E2E copy.
 
-The production manifest is audited separately and never contains that test permission.
+The production manifest is audited separately with the host access required for cross-origin media request capture.
 
 ## Build and load unpacked
 
@@ -90,20 +94,23 @@ To inspect the production build manually:
 2. Enable Developer mode.
 3. Select **Load unpacked**.
 4. Choose the absolute `dist/chrome` directory.
-5. Open a controlled page containing a direct MP4 or WebM file.
-6. Click the extension action and verify scanning and download behavior.
+5. Open a controlled page containing a direct file or an unencrypted fragmented MP4 stream.
+6. Click the extension action and verify direct download or assembled MP4 behavior.
 
 ## Architecture
 
+- `src/background/` transiently captures media request URLs and HTTP byte ranges by tab.
 - `src/content/` contains the on-demand, read-only page collector.
-- `src/core/` validates, classifies, redacts, deduplicates, and sorts untrusted page data.
+- `src/core/` validates page data and remuxes captured fragmented MP4 tracks locally.
 - `src/platform/` contains the minimal Chrome API adapters.
 - `src/popup/` contains the React and Radix UI popup.
 - `src/local/` contains the network-disabled local segment merger and CLI behavior.
 - `tests/` contains deterministic unit and component tests.
 - `e2e/` contains controlled browser fixtures and Playwright tests.
 
-The production extension has no background worker, persistent content script, host permission, remote server, analytics, or storage.
+The production extension uses an in-memory background worker and host access for media request capture.
+
+It has no persistent content script, remote server, analytics, or persistent storage.
 
 ## Product and release documents
 
@@ -115,3 +122,4 @@ The production extension has no background worker, persistent content script, ho
 - [Store listing draft](docs/store-listing.md)
 - [Release audit](docs/release-audit.md)
 - [HLS decision](docs/adr/0001-hls-support.md)
+- [Browser fragmented MP4 remux decision](docs/adr/0003-browser-fmp4-remux.md)

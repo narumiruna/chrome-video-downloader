@@ -8,9 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type AssemblyProgress,
+  assembleCapturedMp4,
+} from "../core/assemble-captured-mp4";
 import type { VideoCandidate } from "../core/video-candidate";
 import {
   type DownloadResult,
+  startBlobDownload,
   startVideoDownload,
 } from "../platform/chrome-downloads";
 import { type ScanPageResult, scanActivePage } from "../platform/chrome-tabs";
@@ -29,7 +34,11 @@ export interface AppProps {
   scanPage?: () => Promise<ScanPageResult>;
   downloadVideo?: (candidate: VideoCandidate) => Promise<DownloadResult>;
   getCapturedVideos?: () => Promise<CapturedVideo[]>;
+  assembleVideo?: typeof assembleCapturedMp4;
+  downloadAssembledVideo?: typeof startBlobDownload;
 }
+
+type AssemblyState = "idle" | "fetching" | "muxing" | "accepted" | "error";
 
 function formatDuration(seconds: number): string {
   const totalSeconds = Math.floor(seconds);
@@ -41,6 +50,16 @@ function formatDuration(seconds: number): string {
         .toString()
         .padStart(2, "0")}`
     : `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function assembledFilename(pageTitle: string): string {
+  const safeTitle = Array.from(pageTitle, (character) =>
+    (character.codePointAt(0) ?? 0) < 32 || '<>:"/\\|?*'.includes(character)
+      ? " "
+      : character,
+  ).join("");
+  const basename = safeTitle.replace(/\s+/g, " ").trim().slice(0, 120);
+  return `${basename || "video"}.mp4`;
 }
 
 function candidateMetadata(candidate: VideoCandidate): string[] {
@@ -56,6 +75,8 @@ export function App({
   scanPage = scanActivePage,
   downloadVideo = startVideoDownload,
   getCapturedVideos,
+  assembleVideo = assembleCapturedMp4,
+  downloadAssembledVideo = startBlobDownload,
 }: AppProps) {
   const locale = useMemo(
     () => resolveLocale(requestedLocale),
@@ -64,6 +85,7 @@ export function App({
   const copy = useMemo(() => getMessages(locale), [locale]);
   const [state, dispatch] = useReducer(popupReducer, initialState);
   const [announcement, setAnnouncement] = useState(copy.scanning);
+  const [assemblyState, setAssemblyState] = useState<AssemblyState>("idle");
   const mountedRef = useRef(false);
   const scanVersionRef = useRef(0);
   const pendingDownloadsRef = useRef(new Set<string>());
@@ -72,6 +94,7 @@ export function App({
     const version = scanVersionRef.current + 1;
     scanVersionRef.current = version;
     dispatch({ type: "scan-started" });
+    setAssemblyState("idle");
     setAnnouncement(copy.scanning);
     try {
       const result = await scanPage();
@@ -151,15 +174,68 @@ export function App({
     [copy.downloadError, copy.sentStatus, downloadVideo],
   );
 
+  const handleAssembly = useCallback(
+    async (capturedVideos: CapturedVideo[], pageTitle: string) => {
+      if (assemblyState === "fetching" || assemblyState === "muxing") return;
+
+      setAssemblyState("fetching");
+      setAnnouncement(copy.fetchingParts);
+      try {
+        const blob = await assembleVideo(capturedVideos, {
+          onProgress: (progress: AssemblyProgress) => {
+            if (!mountedRef.current) return;
+            const nextState =
+              progress.phase === "muxing" ? "muxing" : "fetching";
+            setAssemblyState(nextState);
+            setAnnouncement(
+              progress.phase === "muxing" ? copy.muxing : copy.fetchingParts,
+            );
+          },
+        });
+        const result = await downloadAssembledVideo(
+          blob,
+          assembledFilename(pageTitle),
+        );
+        if (!mountedRef.current) return;
+        if (result.status === "accepted") {
+          setAssemblyState("accepted");
+          setAnnouncement(copy.sentStatus);
+        } else {
+          setAssemblyState("error");
+          setAnnouncement(copy.assemblyError);
+        }
+      } catch {
+        if (!mountedRef.current) return;
+        setAssemblyState("error");
+        setAnnouncement(copy.assemblyError);
+      }
+    },
+    [
+      assembleVideo,
+      assemblyState,
+      copy.assemblyError,
+      copy.fetchingParts,
+      copy.muxing,
+      copy.sentStatus,
+      downloadAssembledVideo,
+    ],
+  );
+
   const anyDownloadStarting = Object.values(state.downloads).includes(
     "starting",
   );
+  const assemblyInProgress =
+    assemblyState === "fetching" || assemblyState === "muxing";
 
   function scanButton() {
     return (
       <button
         className="secondary-button"
-        disabled={state.scan.status === "scanning" || anyDownloadStarting}
+        disabled={
+          state.scan.status === "scanning" ||
+          anyDownloadStarting ||
+          assemblyInProgress
+        }
         onClick={() => void runScan()}
         type="button"
       >
@@ -277,52 +353,53 @@ export function App({
     );
   }
 
-  function capturedVideoSection(capturedVideos: CapturedVideo[]) {
-    if (capturedVideos.length === 0) return null;
+  function capturedVideoSection(
+    capturedVideos: CapturedVideo[],
+    pageTitle: string,
+  ) {
+    const mp4Parts = capturedVideos.filter((video) => {
+      const mimeType = video.mimeType.split(";", 1)[0]?.trim().toLowerCase();
+      return mimeType === "video/mp4" || mimeType === "audio/mp4";
+    });
+    const videoCount = mp4Parts.filter((part) =>
+      part.mimeType.toLowerCase().startsWith("video/mp4"),
+    ).length;
+    const audioCount = mp4Parts.length - videoCount;
+    const hasFragmentEvidence =
+      audioCount > 0 ||
+      mp4Parts.some((part) => /\.m4s(?:$|[?#])/i.test(part.url));
+    if (videoCount === 0 || !hasFragmentEvidence) return null;
+
+    const buttonText =
+      assemblyState === "fetching"
+        ? copy.fetchingParts
+        : assemblyState === "muxing"
+          ? copy.muxing
+          : assemblyState === "accepted"
+            ? copy.sentButton
+            : assemblyState === "error"
+              ? copy.retry
+              : copy.assemble;
 
     return (
       <div className="captured-video-section">
-        <h3>Captured video URLs</h3>
-        <p className="captured-video-hint">
-          These video URLs were detected during page navigation. Click to
-          download.
+        <h3>{copy.capturedStreamTitle}</h3>
+        <p className="captured-video-hint">{copy.capturedStreamHint}</p>
+        <p className="metadata captured-part-counts">
+          <span>video/mp4 × {videoCount}</span>
+          {audioCount > 0 ? <span>audio/mp4 × {audioCount}</span> : null}
         </p>
-        <ul className="captured-video-list">
-          {capturedVideos.map((video) => (
-            <li
-              key={video.url + video.timestamp}
-              className="captured-video-item"
-            >
-              <div className="captured-video-info">
-                <span className="captured-video-type">
-                  {video.mimeType || "video"}
-                </span>
-                <span className="captured-video-time">
-                  {new Date(video.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
-              <a
-                href={video.url}
-                className="captured-video-link"
-                title={video.url}
-              >
-                {video.url.length > 60
-                  ? `${video.url.substring(0, 60)}...`
-                  : video.url}
-              </a>
-              <button
-                type="button"
-                className="download-captured-button"
-                onClick={() => {
-                  // Trigger download via window.open for background URLs
-                  window.open(video.url, "_blank");
-                }}
-              >
-                Download
-              </button>
-            </li>
-          ))}
-        </ul>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={assemblyInProgress || assemblyState === "accepted"}
+          onClick={() => void handleAssembly(mp4Parts, pageTitle)}
+        >
+          {buttonText}
+        </button>
+        {assemblyState === "error" ? (
+          <p className="unsupported-reason">{copy.assemblyError}</p>
+        ) : null}
       </div>
     );
   }
@@ -347,7 +424,10 @@ export function App({
               {scanButton()}
             </div>
             {iframeInfoSection(state.scan.iframeUrls)}
-            {capturedVideoSection(state.scan.capturedVideos)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {candidateList(state.scan.candidates)}
           </>
         );
@@ -356,7 +436,10 @@ export function App({
           <section className="state-panel">
             <h1>{copy.unsupportedTitle}</h1>
             {iframeInfoSection(state.scan.iframeUrls)}
-            {capturedVideoSection(state.scan.capturedVideos)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {candidateList(state.scan.candidates)}
             {scanButton()}
           </section>
@@ -368,7 +451,10 @@ export function App({
             <h1>{copy.emptyTitle}</h1>
             <p>{copy.emptyMessage}</p>
             {iframeInfoSection(state.scan.iframeUrls)}
-            {capturedVideoSection(state.scan.capturedVideos)}
+            {capturedVideoSection(
+              state.scan.capturedVideos,
+              state.scan.pageTitle,
+            )}
             {scanButton()}
           </section>
         );

@@ -6,6 +6,7 @@ export interface CapturedVideo {
   url: string;
   mimeType: string;
   timestamp: number;
+  range?: string;
 }
 
 export type ScanView =

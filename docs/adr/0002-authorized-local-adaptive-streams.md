@@ -1,6 +1,6 @@
 # ADR 0002: Support bounded authorized local adaptive streams
 
-- Status: Accepted.
+- Status: Accepted for the local CLI; extension-specific prohibitions are superseded in part by ADR 0003.
 - Date: August 15, 2026.
 
 ## Context
@@ -63,7 +63,9 @@ Dynamic MPDs, multiple Periods, negative timeline repeats, timeline-free templat
 
 Unsupported template tokens and ambiguous representations are rejected rather than guessed.
 
-Website extraction, browser request interception, cache inspection, media-buffer capture, decryption, and access-control bypass remain prohibited.
+General website extraction, cache inspection, media-buffer capture, decryption, and access-control bypass remain prohibited.
+
+ADR 0003 separately permits bounded request interception and local remuxing for compatible unencrypted fragmented MP4.
 
 ## Consequences
 
@@ -71,6 +73,8 @@ The local tool temporarily requires approximately the combined input-track size 
 
 Stream-copy compatibility still depends on the selected codecs and destination container, with Matroska as the documented fallback.
 
-The browser extension remains unchanged with only `activeTab`, `scripting`, and `downloads`, and its Blob/MSE, HLS, and DASH UI remains unsupported.
+The local CLI behavior remains independent from the browser extension.
+
+ADR 0003 documents the extension's later fragmented MP4 capture and remux capability.
 
 The XML parser is a production dependency for the local CLI but must remain absent from the extension bundle and pass the production dependency audit.

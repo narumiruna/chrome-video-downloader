@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 const fixtureRoot = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const mediaRoot = join(fixtureRoot, "media");
 const manifestRoot = join(fixtureRoot, "manifests");
+const localDashRoot = fileURLToPath(
+  new URL("../tests/fixtures/local-streams/dash/", import.meta.url),
+);
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -20,6 +23,7 @@ const contentTypes = new Map([
 
 const pages = new Set([
   "blob.html",
+  "captured-stream.html",
   "direct.html",
   "dynamic.html",
   "empty.html",
@@ -34,6 +38,16 @@ const pages = new Set([
 function safeManifestPath(pathname) {
   const match = /^\/manifests\/(hls|dash)\/([a-zA-Z0-9.-]+)$/.exec(pathname);
   return match ? join(manifestRoot, match[1], match[2]) : null;
+}
+
+function capturedStreamPart(pathname) {
+  const match = /^\/captured\/(video|audio)\/([a-zA-Z0-9.-]+)$/.exec(pathname);
+  return match
+    ? {
+        contentType: `${match[1]}/mp4`,
+        path: join(localDashRoot, match[2]),
+      }
+    : null;
 }
 
 async function sendFile(request, response, path, options = {}) {
@@ -130,6 +144,13 @@ function mainHandler(request, response) {
     const manifestPath = safeManifestPath(url.pathname);
     if (manifestPath) {
       await sendFile(request, response, manifestPath);
+      return;
+    }
+    const capturedPart = capturedStreamPart(url.pathname);
+    if (capturedPart) {
+      await sendFile(request, response, capturedPart.path, {
+        contentType: capturedPart.contentType,
+      });
       return;
     }
     notFound(response);

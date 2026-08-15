@@ -2,59 +2,63 @@
 
 Last updated: August 15, 2026.
 
-Chrome Video Downloader processes the active page's title, URL, video source URLs, source type, video dimensions, and duration only when the user invokes the extension.
+Chrome Video Downloader processes page titles, page URLs, video source URLs, media request URLs, HTTP byte ranges, media types, dimensions, and durations locally on the user's device.
 
-This information is used only to identify direct video files, show safe candidate details, and start a download selected by the user.
+The background service worker observes media-like requests so the extension can discover video and audio fragments loaded by cross-origin players.
 
-Processing occurs locally on the user's device.
+Captured request metadata is grouped by tab, kept only in memory, capped, and removed after five minutes of inactivity or when the tab closes.
+
+When the user selects **Assemble MP4**, the extension requests the captured media URLs from their original hosts and remuxes compatible unencrypted MP4 audio and video fragments in the popup.
 
 The extension does not transmit page data, media URLs, media content, download history, or usage data to the developer or any developer-controlled service.
 
-When the user chooses a candidate, Chrome makes the normal network request to that video's source host to perform the requested download.
+The source websites receive the normal requests needed to fetch or download user-selected media.
 
-The extension does not add a separate recipient or remote processing service to that request.
-
-The extension does not persist page data, media URLs, candidates, or download history.
-
-Candidate data exists only in the popup's memory and is discarded when the popup closes or scans again.
-
-The extension does not use analytics, advertising, tracking, telemetry, accounts, or a remote processing service.
+The extension does not use analytics, advertising, tracking, telemetry, accounts, or remote processing.
 
 ## Permissions
 
-`activeTab` grants temporary access to the current page only after the user invokes the extension.
+`activeTab` grants temporary access to the current page after the user invokes the extension.
 
-`scripting` runs a read-only collector in the current top-level page to find video source information.
+`scripting` runs a read-only collector in the current top-level page to find video source and iframe information.
 
-`downloads` sends the video URL selected by the user to Chrome's download manager.
+`webRequest` observes media request URLs, response media types, and HTTP byte ranges needed to identify fragmented playback.
 
-The production extension does not request persistent host access, browsing history, cookies, storage, background monitoring, `webRequest`, `debugger`, or offscreen documents.
+`host_permissions` allows observation and user-requested fetching of cross-origin media from embedded players and CDNs.
 
-Chrome may include existing cookies for the destination hostname when it performs an HTTP(S) download.
+`alarms` removes stale in-memory request metadata.
 
-The extension does not read, copy, store, or transmit those cookies.
+`storage` uses Chrome's non-persistent `storage.session` area so captured fragments survive service-worker suspension within the current browser session.
+
+`downloads` sends a selected direct video or locally assembled MP4 to Chrome's download manager.
+
+The extension does not request browsing history, cookie, persistent storage, debugger, or offscreen-document permissions.
+
+A media host may receive existing cookies when Chrome performs a normal authorized request.
+
+The extension does not inspect, copy, persist, or transmit cookie values.
 
 ## Data sharing and retention
 
 No user data is sold, transferred, or shared by the developer.
 
-The source website still receives the normal request needed to serve a user-selected download.
-
 No user data is retained by the developer because no user data is received.
+
+Captured request metadata remains in extension memory only and is automatically discarded.
 
 The use of information received from Chrome APIs adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
 ## User choices
 
-The extension runs only when the user invokes it and starts a download only when the user selects a candidate.
+Users choose whether to download a direct file or assemble a captured fragmented MP4 stream.
 
-Users can close the popup to discard candidate data, cancel a download through Chrome, or uninstall the extension at any time.
+Users can close the popup to stop an in-progress browser-side assembly, cancel a download through Chrome, close the source tab to clear its captured metadata, or uninstall the extension.
 
 ## Security and content rights
 
-The extension allows only direct HTTP(S) candidates to reach Chrome's download API.
+The extension supports direct HTTP(S) files and a bounded best-effort remux of compatible unencrypted fragmented MP4 tracks.
 
-It does not bypass DRM, authentication, paywalls, CAPTCHAs, or website restrictions.
+It does not decrypt media, bypass DRM, defeat authentication, cross paywalls, solve CAPTCHAs, or circumvent website restrictions.
 
 Users are responsible for downloading only content they own or have permission to save.
 

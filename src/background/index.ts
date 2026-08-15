@@ -1,18 +1,11 @@
-/**
- * Background service worker that captures video URLs from network traffic.
- *
- * This allows the extension to discover video streams from cross-origin iframes
- * and other sources that the content script cannot directly access.
- */
-
 const VIDEO_MIME_PATTERNS = new Set([
+  "audio/mp4",
   "video/mp4",
   "video/webm",
   "video/ogg",
   "video/x-m4v",
   "video/quicktime",
   "application/mp4",
-  "application/octet-stream",
   "application/x-mpegurl",
   "application/vnd.apple.mpegurl",
   "application/dash+xml",
@@ -31,7 +24,6 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 
 const VIDEO_HOSTS = new Set([
-  // Video hosting CDNs
   "vimeocdn.com",
   "cloudfront.net",
   "akamai.net",
@@ -39,14 +31,28 @@ const VIDEO_HOSTS = new Set([
   "fastly.net",
   "googlevideo.com",
   "ytimg.com",
-  "yotpoimgs.com",
   "player.vimeo.com",
   "player.youku.com",
   "coub.com",
   "dailymotion.com",
   "cdninstagram.com",
-  // Custom hosts can be added here
 ]);
+
+interface VideoEntry {
+  url: string;
+  mimeType: string;
+  timestamp: number;
+  tabId: number;
+  range?: string;
+}
+
+type CaptureStore = Record<string, VideoEntry[]>;
+
+const STORAGE_KEY = "capturedVideosByTab";
+const CAPTURE_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_VIDEOS_PER_TAB = 1_000;
+const requestRanges = new Map<string, string>();
+let storageQueue: Promise<void> = Promise.resolve();
 
 function videoExtensionFromUrl(url: string): string {
   try {
@@ -59,208 +65,183 @@ function videoExtensionFromUrl(url: string): string {
   }
 }
 
-function isVideoUrl(url: string, contentType: string): boolean {
-  // Check content type
-  if (contentType) {
-    const normalized = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-    if (VIDEO_MIME_PATTERNS.has(normalized)) {
+function isKnownVideoHost(hostname: string): boolean {
+  for (const videoHost of VIDEO_HOSTS) {
+    if (hostname === videoHost || hostname.endsWith(`.${videoHost}`)) {
       return true;
     }
   }
-
-  // Check file extension
-  const ext = videoExtensionFromUrl(url);
-  if (VIDEO_EXTENSIONS.has(ext)) {
-    return true;
-  }
-
-  // Check for common video URL patterns
-  if (
-    url.includes("/video/") ||
-    url.includes("/stream/") ||
-    url.includes("/media/") ||
-    url.includes("/assets/video/")
-  ) {
-    return true;
-  }
-
-  // Check for known video hosts
-  try {
-    const hostname = new URL(url).hostname;
-    for (const videoHost of VIDEO_HOSTS) {
-      if (hostname.includes(videoHost)) {
-        return true;
-      }
-    }
-  } catch {
-    // Invalid URL, skip
-  }
-
   return false;
 }
 
-interface VideoEntry {
-  url: string;
-  mimeType: string;
-  timestamp: number;
-  tabId: number;
+function isVideoUrl(url: string, contentType: string): boolean {
+  const normalizedType =
+    contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (VIDEO_MIME_PATTERNS.has(normalizedType)) return true;
+  if (VIDEO_EXTENSIONS.has(videoExtensionFromUrl(url))) return true;
+
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.pathname.includes("/video/") ||
+      parsed.pathname.includes("/stream/") ||
+      parsed.pathname.includes("/media/") ||
+      parsed.pathname.includes("/assets/video/") ||
+      (normalizedType === "application/octet-stream" &&
+        isKnownVideoHost(parsed.hostname))
+    );
+  } catch {
+    return false;
+  }
 }
 
-const capturedVideos = new Map<number, VideoEntry[]>();
-const CAPTURE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_VIDEOS_PER_TAB = 50;
+function parseStore(value: unknown): CaptureStore {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as CaptureStore;
+}
+
+async function readStore(): Promise<CaptureStore> {
+  const result = await chrome.storage.session.get(STORAGE_KEY);
+  return parseStore(result[STORAGE_KEY]);
+}
+
+function updateStore(update: (store: CaptureStore) => void): Promise<void> {
+  const operation = storageQueue.then(async () => {
+    const store = await readStore();
+    update(store);
+    await chrome.storage.session.set({ [STORAGE_KEY]: store });
+  });
+  storageQueue = operation.catch(() => undefined);
+  return operation;
+}
+
+async function videosForTab(tabId: number): Promise<VideoEntry[]> {
+  await storageQueue;
+  const store = await readStore();
+  return store[String(tabId)] ?? [];
+}
 
 function addToCaptures(tabId: number, entry: VideoEntry): void {
   if (tabId < 0) return;
 
-  let videos = capturedVideos.get(tabId);
-  if (!videos) {
-    videos = [];
-    capturedVideos.set(tabId, videos);
-  }
-
-  // Avoid duplicates
-  if (videos.some((v) => v.url === entry.url)) {
-    return;
-  }
-
-  videos.push(entry);
-
-  // Cap the number of entries
-  if (videos.length > MAX_VIDEOS_PER_TAB) {
-    videos.shift();
-  }
-}
-
-function cleanupStaleCaptures(): void {
-  const now = Date.now();
-  for (const [tabId, videos] of capturedVideos.entries()) {
-    const hasRecent = videos.some(
-      (v) => now - v.timestamp < CAPTURE_TIMEOUT_MS,
-    );
-    if (!hasRecent) {
-      capturedVideos.delete(tabId);
+  void updateStore((store) => {
+    const key = String(tabId);
+    const videos = store[key] ?? [];
+    if (
+      videos.some(
+        (video) => video.url === entry.url && video.range === entry.range,
+      )
+    ) {
+      return;
     }
-  }
+
+    videos.push(entry);
+    if (videos.length > MAX_VIDEOS_PER_TAB) videos.shift();
+    store[key] = videos;
+  });
 }
 
-// Clean up periodically
+function clearTab(tabId: number): Promise<void> {
+  return updateStore((store) => {
+    delete store[String(tabId)];
+  });
+}
+
+function cleanupStaleCaptures(): Promise<void> {
+  const now = Date.now();
+  return updateStore((store) => {
+    for (const [tabId, videos] of Object.entries(store)) {
+      if (!videos.some((video) => now - video.timestamp < CAPTURE_TIMEOUT_MS)) {
+        delete store[tabId];
+      }
+    }
+  });
+}
+
 chrome.alarms.create("cleanup", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "cleanup") {
-    cleanupStaleCaptures();
-  }
+  if (alarm.name === "cleanup") void cleanupStaleCaptures();
 });
 
-// Remove when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
-  capturedVideos.delete(tabId);
+  void clearTab(tabId);
 });
 
-// Intercept response headers to capture video URLs
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") void clearTab(tabId);
+});
+
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    const range = details.requestHeaders?.find(
+      (header) => header.name.toLowerCase() === "range",
+    )?.value;
+    if (range) requestRanges.set(details.requestId, range);
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"],
+);
+
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     const contentType = details.responseHeaders?.find(
-      (h) => h.name.toLowerCase() === "content-type",
+      (header) => header.name.toLowerCase() === "content-type",
     );
     const mimeType = contentType?.value ?? "";
-    const url = details.url;
+    if (!isVideoUrl(details.url, mimeType)) return;
 
-    if (isVideoUrl(url, mimeType)) {
-      const entry: VideoEntry = {
-        url,
-        mimeType,
-        timestamp: Date.now(),
-        tabId: details.tabId,
-      };
-
-      addToCaptures(details.tabId, entry);
-    }
+    const range = requestRanges.get(details.requestId);
+    addToCaptures(details.tabId, {
+      url: details.url,
+      mimeType,
+      timestamp: Date.now(),
+      tabId: details.tabId,
+      ...(range ? { range } : {}),
+    });
   },
   { urls: ["<all_urls>"] },
   ["responseHeaders"],
 );
 
-// Also capture on response start for better timing
-chrome.webRequest.onResponseStarted.addListener(
-  (details) => {
-    const contentType = details.responseHeaders?.find(
-      (h) => h.name.toLowerCase() === "content-type",
-    );
-    const mimeType = contentType?.value ?? "";
-    const url = details.url;
+function forgetRequest(details: { requestId: string }): void {
+  requestRanges.delete(details.requestId);
+}
 
-    if (isVideoUrl(url, mimeType)) {
-      const entry: VideoEntry = {
-        url,
-        mimeType,
-        timestamp: Date.now(),
-        tabId: details.tabId,
-      };
+chrome.webRequest.onCompleted.addListener(forgetRequest, {
+  urls: ["<all_urls>"],
+});
+chrome.webRequest.onErrorOccurred.addListener(forgetRequest, {
+  urls: ["<all_urls>"],
+});
 
-      addToCaptures(details.tabId, entry);
-    }
-  },
-  { urls: ["<all_urls>"] },
-  ["responseHeaders"],
-);
-
-// Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener(
   (
-    message: {
-      type: string;
-      tabId?: number;
-      action?: string;
-    },
+    message: { type: string; tabId?: number },
     _sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void,
   ) => {
     if (message.type === "getCapturedVideos") {
       const tabId = message.tabId ?? -1;
-      const videos = tabId >= 0 ? (capturedVideos.get(tabId) ?? []) : [];
-      sendResponse({
-        status: "ok",
-        videos,
-        tabId,
-      });
+      void videosForTab(tabId)
+        .then((videos) => sendResponse({ status: "ok", tabId, videos }))
+        .catch(() => sendResponse({ status: "error", tabId, videos: [] }));
       return true;
     }
 
     if (message.type === "clearCapturedVideos") {
-      if (message.tabId !== undefined) {
-        capturedVideos.delete(message.tabId);
-      } else {
-        capturedVideos.clear();
-      }
-      sendResponse({ status: "ok" });
-      return true;
-    }
-
-    if (message.type === "captureFromIframe") {
-      // Content script can signal that a video was found in an iframe
-      if (message.tabId !== undefined) {
-        const entry: VideoEntry = {
-          url: "iframe-detected",
-          mimeType: "iframe/video",
-          timestamp: Date.now(),
-          tabId: message.tabId,
-        };
-        addToCaptures(message.tabId, entry);
-      }
-      sendResponse({ status: "ok" });
+      const operation =
+        message.tabId === undefined
+          ? updateStore((store) => {
+              for (const tabId of Object.keys(store)) delete store[tabId];
+            })
+          : clearTab(message.tabId);
+      void operation
+        .then(() => sendResponse({ status: "ok" }))
+        .catch(() => sendResponse({ status: "error" }));
       return true;
     }
 
     sendResponse({ status: "unknown-message" });
-    return true;
+    return false;
   },
 );
-
-// Notify popup when new videos are captured
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "complete" && capturedVideos.has(tabId)) {
-    // The videos are already in memory, no need to notify
-    // The popup will poll or request the videos when opened
-  }
-});

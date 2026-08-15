@@ -8,6 +8,7 @@ const expectedPermissions = [
   "alarms",
   "downloads",
   "scripting",
+  "storage",
   "webRequest",
 ];
 const expectedHostPermissions = ["<all_urls>"];
@@ -76,7 +77,7 @@ for (const key of forbiddenManifestKeys) {
   if (key in manifest) failures.push(`forbidden manifest key: ${key}`);
 }
 if (manifest.manifest_version !== 3) failures.push("manifest_version is not 3");
-if (manifest.minimum_chrome_version !== "96") {
+if (manifest.minimum_chrome_version !== "102") {
   failures.push("minimum_chrome_version is missing or unexpected");
 }
 if (manifest.action?.default_popup !== "action/index.html") {

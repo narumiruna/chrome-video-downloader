@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
+import type { assembleCapturedMp4 } from "../../src/core/assemble-captured-mp4";
 import type { VideoCandidate } from "../../src/core/video-candidate";
 import type { DownloadResult } from "../../src/platform/chrome-downloads";
 import type { ScanPageResult } from "../../src/platform/chrome-tabs";
@@ -35,10 +36,16 @@ const hls: VideoCandidate = {
   url: "https://cdn.example.com/master.m3u8?token=secret",
 };
 
-function success(candidates: VideoCandidate[]): ScanPageResult {
+function success(
+  candidates: VideoCandidate[],
+  capturedVideos: Extract<
+    ScanPageResult,
+    { status: "success" }
+  >["capturedVideos"] = [],
+): ScanPageResult {
   return {
     candidates,
-    capturedVideos: [],
+    capturedVideos,
     iframeUrls: [],
     pageTitle: "Training lesson",
     pageUrl: "https://example.com/watch?private=value",
@@ -81,12 +88,66 @@ describe("App", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "No page or video URL is collected, saved, or sent to the developer.",
+        "Page and video URLs are processed only on this device and are not sent to the developer.",
       ),
     ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Download lesson.mp4" }),
     ).toBeEnabled();
+  });
+
+  test("assembles captured audio and video parts into one MP4 download", async () => {
+    const capturedVideos = [
+      {
+        mimeType: "video/mp4",
+        timestamp: 1,
+        url: "https://media.example/video-part.m4s?secret=video",
+      },
+      {
+        mimeType: "audio/mp4",
+        timestamp: 2,
+        url: "https://media.example/audio-part.m4s?secret=audio",
+      },
+    ];
+    const assembleVideo = vi.fn<typeof assembleCapturedMp4>(
+      async (_requests, options) => {
+        options?.onProgress?.({ phase: "muxing", completed: 0, total: 1 });
+        return new Blob(["combined"], { type: "video/mp4" });
+      },
+    );
+    const downloadAssembledVideo = vi
+      .fn()
+      .mockResolvedValue({ downloadId: 14, status: "accepted" });
+    const user = userEvent.setup();
+
+    render(
+      <App
+        locale="en"
+        scanPage={vi.fn().mockResolvedValue(success([], capturedVideos))}
+        downloadVideo={vi.fn()}
+        assembleVideo={assembleVideo}
+        downloadAssembledVideo={downloadAssembledVideo}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Captured video stream" }),
+    ).toBeVisible();
+    expect(screen.getByText("video/mp4 × 1")).toBeVisible();
+    expect(screen.getByText("audio/mp4 × 1")).toBeVisible();
+    expect(screen.queryByText(/secret=video|secret=audio/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Assemble MP4" }));
+
+    expect(assembleVideo).toHaveBeenCalledWith(
+      capturedVideos,
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(downloadAssembledVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "video/mp4" }),
+      "Training lesson.mp4",
+    );
+    expect(await screen.findByText("Sent to Chrome downloads.")).toBeVisible();
   });
 
   test("prevents duplicate submission while leaving other candidates usable", async () => {

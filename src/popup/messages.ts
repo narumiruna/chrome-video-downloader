@@ -21,6 +21,12 @@ export interface Messages {
   downloadError: string;
   unsupported: string;
   sourceHost: string;
+  capturedStreamTitle: string;
+  capturedStreamHint: string;
+  assemble: string;
+  fetchingParts: string;
+  muxing: string;
+  assemblyError: string;
 }
 
 const messages: Record<SupportedLocale, Messages> = {
@@ -28,7 +34,7 @@ const messages: Record<SupportedLocale, Messages> = {
     appName: "Video Downloader",
     rightsNotice: "Download only videos you own or have permission to save.",
     privacyNotice:
-      "No page or video URL is collected, saved, or sent to the developer.",
+      "Page and video URLs are processed only on this device and are not sent to the developer.",
     scanning: "Scanning this page…",
     scanAgain: "Scan again",
     emptyTitle: "No direct videos found",
@@ -46,11 +52,19 @@ const messages: Record<SupportedLocale, Messages> = {
     downloadError: "Chrome could not start this download. Try again.",
     unsupported: "Not supported",
     sourceHost: "Source",
+    capturedStreamTitle: "Captured video stream",
+    capturedStreamHint:
+      "Play the video from beginning to end before assembling all captured parts.",
+    assemble: "Assemble MP4",
+    fetchingParts: "Downloading stream parts…",
+    muxing: "Combining audio and video…",
+    assemblyError:
+      "The captured stream could not be assembled. Replay it from the beginning and try again.",
   },
   "zh-TW": {
     appName: "影片下載器",
     rightsNotice: "請只下載您擁有或獲授權保存的影片。",
-    privacyNotice: "開發者不會收集、儲存或接收頁面或影片網址。",
+    privacyNotice: "頁面與影片網址只會在此裝置上處理，不會傳送給開發者。",
     scanning: "正在掃描此頁面…",
     scanAgain: "重新掃描",
     emptyTitle: "找不到直接影片",
@@ -68,6 +82,12 @@ const messages: Record<SupportedLocale, Messages> = {
     downloadError: "Chrome 無法啟動此下載，請再試一次。",
     unsupported: "不支援",
     sourceHost: "來源",
+    capturedStreamTitle: "已擷取的影片串流",
+    capturedStreamHint: "組合前請先將影片從頭到尾播放一次，以擷取所有片段。",
+    assemble: "組合 MP4",
+    fetchingParts: "正在下載串流片段…",
+    muxing: "正在合併音訊與視訊…",
+    assemblyError: "無法組合已擷取的串流，請從頭播放後再試一次。",
   },
 };
 

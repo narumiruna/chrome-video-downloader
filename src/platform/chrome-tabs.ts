@@ -37,6 +37,7 @@ export interface CapturedVideo {
   url: string;
   mimeType: string;
   timestamp: number;
+  range?: string;
 }
 
 export type ScanPageResult =
@@ -90,13 +91,7 @@ export function isRestrictedPageUrl(rawUrl: string): boolean {
 async function fetchCapturedVideos(
   api: ChromeScanApi,
   tabId: number,
-): Promise<
-  {
-    url: string;
-    mimeType: string;
-    timestamp: number;
-  }[]
-> {
+): Promise<CapturedVideo[]> {
   return new Promise((resolve) => {
     try {
       api.runtime.sendMessage(
@@ -109,9 +104,7 @@ async function fetchCapturedVideos(
             (response as { status: string }).status === "ok"
           ) {
             const result = response as Record<string, unknown>;
-            const videos = result.videos as
-              | Array<{ url: string; mimeType: string; timestamp: number }>
-              | undefined;
+            const videos = result.videos as CapturedVideo[] | undefined;
             resolve(videos ?? []);
           } else {
             resolve([]);

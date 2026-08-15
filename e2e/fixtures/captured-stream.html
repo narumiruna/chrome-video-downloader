@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Captured stream fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Captured stream fixture</h1>
+      <p>Loads separate fragmented MP4 video and audio tracks.</p>
+    </main>
+    <script>
+      const parts = [
+        "/captured/video/init-stream0.m4s",
+        "/captured/video/chunk-stream0-00002.m4s",
+        "/captured/audio/init-stream1.m4s",
+        "/captured/audio/chunk-stream1-00003.m4s",
+        "/captured/video/chunk-stream0-00001.m4s",
+        "/captured/audio/chunk-stream1-00001.m4s",
+        "/captured/audio/chunk-stream1-00002.m4s",
+      ];
+
+      Promise.all(
+        parts.map(async (path) => {
+          const response = await fetch(path);
+          if (!response.ok) throw new Error(`Failed to load ${path}`);
+          await response.arrayBuffer();
+        }),
+      ).then(() => {
+        document.documentElement.dataset.streamLoaded = "true";
+      });
+    </script>
+  </body>
+</html>

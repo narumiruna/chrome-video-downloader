@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/chrome-manifest.json",
   "manifest_version": 3,
-  "minimum_chrome_version": "96",
+  "minimum_chrome_version": "102",
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
   "version": "0.1.0",
@@ -11,7 +11,8 @@
     "scripting",
     "downloads",
     "webRequest",
-    "alarms"
+    "alarms",
+    "storage"
   ],
   "host_permissions": ["<all_urls>"],
   "icons": {
