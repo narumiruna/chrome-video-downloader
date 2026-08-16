@@ -503,25 +503,27 @@ describe("mergeLocalSegments", () => {
     );
   });
 
-  test("rejects control characters that could inject concat directives", async () => {
-    const root = await temporaryDirectory();
-    const injectedName = "part.ts'\nfile 'secret.ts";
-    const segment = join(root, injectedName);
-    await writeFile(segment, "part");
-    const runCommand = vi.fn<CommandRunner>();
+  test.each(["part.ts'\nfile 'secret.ts", "part\u009b[31m.ts"])(
+    "rejects control characters that could inject concat directives or terminal escapes",
+    async (injectedName) => {
+      const root = await temporaryDirectory();
+      const segment = join(root, injectedName);
+      await writeFile(segment, "part");
+      const runCommand = vi.fn<CommandRunner>();
 
-    await expect(
-      mergeLocalSegments(
-        {
-          output: join(root, "result.mp4"),
-          overwrite: false,
-          segments: [segment],
-        },
-        { runCommand },
-      ),
-    ).rejects.toMatchObject({ code: "invalid-input" });
-    expect(runCommand).not.toHaveBeenCalled();
-  });
+      await expect(
+        mergeLocalSegments(
+          {
+            output: join(root, "result.mp4"),
+            overwrite: false,
+            segments: [segment],
+          },
+          { runCommand },
+        ),
+      ).rejects.toMatchObject({ code: "invalid-input" });
+      expect(runCommand).not.toHaveBeenCalled();
+    },
+  );
 
   test("rejects a playlist supplied as an explicit media segment", async () => {
     const root = await temporaryDirectory();

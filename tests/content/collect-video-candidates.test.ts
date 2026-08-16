@@ -100,6 +100,28 @@ describe("collectVideoCandidates", () => {
     );
   });
 
+  test("keeps equivalent encoded media extensions from performance entries", () => {
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([
+      {
+        name: "https://cdn.example.com/master%2Em3u8?token=secret",
+        initiatorType: "fetch",
+      },
+      {
+        name: "https://cdn.example.com/chunk%2Ets",
+        initiatorType: "xmlhttprequest",
+      },
+    ] as PerformanceResourceTiming[]);
+
+    const result = collectVideoCandidates();
+
+    expect(result.candidates).toEqual([
+      {
+        url: "https://cdn.example.com/master%2Em3u8?token=secret",
+        sourceKind: "performance",
+      },
+    ]);
+  });
+
   test("deduplicates repeated source URLs and keeps later MIME evidence", () => {
     document.body.innerHTML = `
       <video>

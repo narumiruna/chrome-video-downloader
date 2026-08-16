@@ -159,6 +159,49 @@ describe("App", () => {
     expect(await screen.findByText("Sent to Chrome downloads.")).toBeVisible();
   });
 
+  test("sanitizes page-controlled assembled download filenames", async () => {
+    const capturedVideos = [
+      {
+        mimeType: "video/mp4",
+        timestamp: 1,
+        url: "https://media.example/video-part.m4s",
+      },
+      {
+        mimeType: "audio/mp4",
+        timestamp: 2,
+        url: "https://media.example/audio-part.m4s",
+      },
+    ];
+    const user = userEvent.setup();
+    const downloadAssembledVideo = vi
+      .fn()
+      .mockResolvedValue({ downloadId: 22, status: "accepted" });
+
+    render(
+      <App
+        locale="en"
+        scanPage={vi.fn().mockResolvedValue({
+          ...success([], capturedVideos),
+          pageTitle: "Invoice\u202egpj\u009b[31m",
+        })}
+        downloadVideo={vi.fn()}
+        assembleVideo={vi
+          .fn<typeof assembleCapturedMp4>()
+          .mockResolvedValue(new Blob(["combined"], { type: "video/mp4" }))}
+        downloadAssembledVideo={downloadAssembledVideo}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Assemble MP4" }),
+    );
+
+    expect(downloadAssembledVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "video/mp4" }),
+      "Invoice gpj [31m.mp4",
+    );
+  });
+
   test("refreshes captured parts after playback and exposes assembly progress", async () => {
     const initialParts = [
       {

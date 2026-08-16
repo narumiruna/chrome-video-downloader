@@ -73,6 +73,25 @@ describe("startVideoDownload", () => {
     }
   });
 
+  test("rejects unsafe assembled MP4 filenames before the Chrome API", async () => {
+    const api = downloadsApi();
+
+    for (const filename of [
+      "../lesson.mp4",
+      "lesson\u009b[31m.mp4",
+      "evil\u202egpj.mp4",
+    ]) {
+      await expect(
+        startBlobDownload(
+          new Blob(["video"], { type: "video/mp4" }),
+          filename,
+          api,
+        ),
+      ).resolves.toEqual({ code: "invalid-candidate", status: "error" });
+    }
+    expect(api.download).not.toHaveBeenCalled();
+  });
+
   test("hands a validated URL to Chrome without overriding browser choices", async () => {
     const api = downloadsApi();
 

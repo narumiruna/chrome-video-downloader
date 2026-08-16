@@ -17,6 +17,7 @@ describe("classifyVideoSource", () => {
 
   test.each([
     ["https://media.example/master.m3u8", "", "HLS", "hls"],
+    ["https://media.example/master%2Em3u8", "", "HLS", "hls"],
     [
       "https://media.example/play",
       "application/vnd.apple.mpegurl",
@@ -24,6 +25,7 @@ describe("classifyVideoSource", () => {
       "hls",
     ],
     ["https://media.example/manifest.mpd", "", "DASH", "dash"],
+    ["https://media.example/manifest%2Empd", "", "DASH", "dash"],
     ["https://media.example/play", "application/dash+xml", "DASH", "dash"],
     ["blob:https://example.com/id", "video/mp4", "BLOB", "blob"],
     ["mediastream:", "", "LIVE", "media-stream"],

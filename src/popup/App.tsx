@@ -91,11 +91,22 @@ function formatDuration(seconds: number): string {
     : `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+function isUnsafeFilenameCharacter(character: string): boolean {
+  const code = character.codePointAt(0) ?? 0;
+  return (
+    code < 32 ||
+    (code >= 127 && code <= 159) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0x200e ||
+    code === 0x200f ||
+    '<>:"/\\|?*'.includes(character)
+  );
+}
+
 function assembledFilename(pageTitle: string): string {
   const safeTitle = Array.from(pageTitle, (character) =>
-    (character.codePointAt(0) ?? 0) < 32 || '<>:"/\\|?*'.includes(character)
-      ? " "
-      : character,
+    isUnsafeFilenameCharacter(character) ? " " : character,
   ).join("");
   const basename = safeTitle.replace(/\s+/g, " ").trim().slice(0, 120);
   return `${basename || "video"}.mp4`;

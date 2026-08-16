@@ -35,7 +35,13 @@ const HLS_MEDIA_TYPES = new Set([
 ]);
 
 function extensionFromUrl(url: URL): string {
-  const filename = url.pathname.split("/").at(-1) ?? "";
+  const encodedFilename = url.pathname.split("/").at(-1) ?? "";
+  let filename = encodedFilename;
+  try {
+    filename = decodeURIComponent(encodedFilename);
+  } catch {
+    // Keep the encoded path segment when it is malformed.
+  }
   const dot = filename.lastIndexOf(".");
   return dot < 0 ? "" : filename.slice(dot + 1).toLowerCase();
 }

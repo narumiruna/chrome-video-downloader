@@ -75,7 +75,13 @@ let playbackStorageQueue: Promise<void> = Promise.resolve();
 function videoExtensionFromUrl(url: string): string {
   try {
     const pathname = new URL(url).pathname;
-    const filename = pathname.split("/").pop() ?? "";
+    const encodedFilename = pathname.split("/").pop() ?? "";
+    let filename = encodedFilename;
+    try {
+      filename = decodeURIComponent(encodedFilename);
+    } catch {
+      // Keep the encoded path segment when it is malformed.
+    }
     const dotIndex = filename.lastIndexOf(".");
     return dotIndex < 0 ? "" : filename.slice(dotIndex + 1).toLowerCase();
   } catch {

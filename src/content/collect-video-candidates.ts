@@ -21,7 +21,15 @@ export function collectVideoCandidates(): RawCollection {
   const maxMediaTypeLength = 256;
   const maxPageTitleLength = 200;
   const maxPageUrlLength = 4_096;
-  const mediaResourcePattern = /\.(?:m4v|mov|mp4|mpd|m3u8|ogv|webm)(?:$|[?#])/i;
+  const mediaResourceExtensions = new Set([
+    "m4v",
+    "mov",
+    "mp4",
+    "mpd",
+    "m3u8",
+    "ogv",
+    "webm",
+  ]);
   const candidates: RawCollectedCandidate[] = [];
   const candidateIndexes = new Map<string, number>();
   const iframeUrls: string[] = [];
@@ -29,6 +37,24 @@ export function collectVideoCandidates(): RawCollection {
 
   function cap(value: string, maxLength: number): string {
     return value.slice(0, maxLength);
+  }
+
+  function mediaResourceExtension(rawUrl: string): string {
+    let pathname: string;
+    try {
+      pathname = new URL(rawUrl).pathname;
+    } catch {
+      return "";
+    }
+    const encodedFilename = pathname.split("/").at(-1) ?? "";
+    let filename = encodedFilename;
+    try {
+      filename = decodeURIComponent(encodedFilename);
+    } catch {
+      // Keep the encoded path segment when it is malformed.
+    }
+    const dot = filename.lastIndexOf(".");
+    return dot < 0 ? "" : filename.slice(dot + 1).toLowerCase();
   }
 
   function add(candidate: RawCollectedCandidate): void {
@@ -248,7 +274,7 @@ export function collectVideoCandidates(): RawCollection {
       const resource = entry as PerformanceResourceTiming;
       if (
         typeof resource.name !== "string" ||
-        !mediaResourcePattern.test(resource.name) ||
+        !mediaResourceExtensions.has(mediaResourceExtension(resource.name)) ||
         !["fetch", "video", "xmlhttprequest"].includes(resource.initiatorType)
       ) {
         continue;

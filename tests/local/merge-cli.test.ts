@@ -121,6 +121,10 @@ describe("parseMergeArguments", () => {
       message: "local filesystem paths",
     },
     {
+      args: ["--segment", "part\u009b[31m.ts", "--output", "result.mp4"],
+      message: "local filesystem paths",
+    },
+    {
       args: ["--video-playlist", "video.m3u8", "--output", "result.mp4"],
       message: "both --video-playlist and --audio-playlist",
     },

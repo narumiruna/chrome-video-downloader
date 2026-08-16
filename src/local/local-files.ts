@@ -9,7 +9,7 @@ export const MAX_REFERENCE_LENGTH = 8_192;
 export function hasControlCharacters(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) as number;
-    if (code <= 31 || code === 127) return true;
+    if (code <= 31 || (code >= 127 && code <= 159)) return true;
   }
   return false;
 }

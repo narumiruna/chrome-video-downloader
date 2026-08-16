@@ -25,7 +25,7 @@ export class CliUsageError extends Error {
 function hasControlCharacters(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) as number;
-    if (code <= 31 || code === 127) return true;
+    if (code <= 31 || (code >= 127 && code <= 159)) return true;
   }
   return false;
 }
